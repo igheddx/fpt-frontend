@@ -1,0 +1,18 @@
+
+
+
+.card {
+  
+    margin-bottom: 24px;
+    border: none !important;
+    border-bottom: "2px solid #3C3D37" !important;
+
+  }
+
+  .custom-card .ant-card-head {
+    margin-bottom: 24px;
+    border: "none" !important;
+    border-bottom: "1px solid #3C3D37" !important;
+  }
+
+  

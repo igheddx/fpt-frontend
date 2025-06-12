@@ -1,0 +1,18 @@
+version: 0.0
+os: linux
+files:
+  - source: build/
+    destination: /home/ubuntu/myDeployment/build
+  - source: scripts/
+    destination: /home/ubuntu/myDeployment/scripts
+  - source: appspec.yml
+    destination: /home/ubuntu/myDeployment
+hooks:
+  AfterInstall:
+    - location: scripts/after_install.sh
+      timeout: 180
+      runas: ubuntu
+  ApplicationStart:
+    - location: scripts/start_server.sh
+      timeout: 60
+      runas: ubuntu

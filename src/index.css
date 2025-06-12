@@ -1,0 +1,87 @@
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
+    "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
+    monospace;
+}
+
+body {
+  background-color: #ffffff;
+  transition: background-color 0.3s ease;
+}
+
+body.dark-mode {
+  background-color: #001529;
+  color: white;
+}
+
+/* styles.css or your component's CSS module */
+.filter-icon {
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  transition: filter 0.3s ease;
+}
+
+/* Dark mode version - adjust based on how you detect dark mode */
+.dark .filter-icon {
+  filter: brightness(0) invert(1);
+}
+
+.dark-modal .ant-modal-content {
+  background-color: #1f1f1f !important;
+  color: #fff !important;
+}
+
+.dark-modal .ant-modal-header {
+  background-color: #1f1f1f !important;
+  border-bottom: 1px solid #333;
+}
+
+.dark-modal .ant-modal-title {
+  color: #fff !important;
+}
+
+.dark-modal .ant-modal-footer {
+  background-color: #1f1f1f !important;
+  border-top: 1px solid #333;
+}
+
+/* Dark mode styles for Select dropdown */
+.dark-select-dropdown .ant-select-item {
+  background-color: #141414 !important;
+  color: #ffffff !important;
+}
+
+.dark-select-dropdown .ant-select-item-option-active {
+  background-color: #1f1f1f !important;
+}
+
+.dark-select-dropdown .ant-select-item-option-selected {
+  background-color: #177ddc !important;
+}
+
+.dark-select-option:hover {
+  background-color: #1f1f1f !important;
+}
+
+/* Ensure consistent height for all Select components */
+.ant-select-lg {
+  height: 40px !important;
+}
+
+.ant-select-lg .ant-select-selector {
+  height: 40px !important;
+  padding: 4px 11px !important;
+}
+
+.ant-select-lg .ant-select-selection-item {
+  line-height: 30px !important;
+}
