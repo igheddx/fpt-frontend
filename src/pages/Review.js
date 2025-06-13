@@ -516,16 +516,22 @@ const Review = () => {
   const actionsColumn = {
     title: "Actions",
     key: "actions",
-    render: (_, record) => (
-      <>
-        <Button type="link" onClick={() => handleApprove(record)}>
-          Approve
-        </Button>
-        <Button type="link" danger onClick={() => handleReject(record)}>
-          Reject
-        </Button>
-      </>
-    ),
+    render: (_, record) => {
+      const approverStatus = record.approverStatus?.toLowerCase();
+      if (approverStatus === "complete") {
+        return null;
+      }
+      return (
+        <>
+          <Button type="link" onClick={() => handleApprove(record)}>
+            Approve
+          </Button>
+          <Button type="link" danger onClick={() => handleReject(record)}>
+            Reject
+          </Button>
+        </>
+      );
+    },
   };
 
   // Determine if Actions column should be shown for any record

@@ -135,6 +135,7 @@ const Login = () => {
       if (response.status == 200 && isSuccessful) {
         sessionStorage.setItem("accessToken", data.token);
         sessionStorage.setItem("refreshToken", data.refreshToken);
+        sessionStorage.setItem("accessLevel", data.accessLevel);
 
         sessionStorage.setItem(
           "profileName",
@@ -170,6 +171,7 @@ const Login = () => {
           email: data.email,
           role: role,
           isCustomerAdmin: isCustomerAdmin,
+          accessLevel: data.accessLevel,
         };
 
         /*do this if defaultAccountId is not 5 - use the 1 account as the default*/

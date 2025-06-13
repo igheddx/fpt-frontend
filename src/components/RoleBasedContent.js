@@ -49,6 +49,26 @@ export const RoleBasedContent = ({
 }) => {
   const { hasPermission, accountContext } = useAccountContext();
 
+  // For admin permission, check access level
+  if (requiredPermission === "admin") {
+    const accessLevel = sessionStorage.getItem("accessLevel")?.toLowerCase();
+    const hasAccess = accessLevel === "root" || accessLevel === "admin";
+
+    if (!hasAccess) {
+      return (
+        fallback ||
+        (showAccessDenied ? (
+          <Alert
+            message="Access Denied"
+            description="You don't have permission to view this content. Required: admin access"
+            type="error"
+            showIcon
+          />
+        ) : null)
+      );
+    }
+  }
+
   // If no account context, show fallback or nothing
   if (!accountContext) {
     return (

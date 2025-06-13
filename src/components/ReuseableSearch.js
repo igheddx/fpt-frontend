@@ -19,6 +19,8 @@ const ReusableSearch = ({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
   const containerRef = useRef(null);
   const { darkMode, toggleTheme } = useDarkMode(); // ✅ use global context instead of local state
   const [searchQuery, setSearchQuery] = useState("");
@@ -29,18 +31,27 @@ const ReusableSearch = ({
     debounce(async (text) => {
       if (text.length >= 3) {
         console.log("text i called data ==", text);
-        const data = await fetchData(text);
-        //console.log("data ==", data);
-
-        console.log("Data from resusabe search ==", data);
-        // Full safety net
-        if (Array.isArray(data)) {
-          setResults(data.slice(0, 10));
-          setShowDropdown(true);
-        } else {
-          console.warn("fetchData did not return an array:", data);
+        setIsLoading(true);
+        setError(null);
+        try {
+          const data = await fetchData(text);
+          console.log("Data from resusabe search ==", data);
+          // Full safety net
+          if (Array.isArray(data)) {
+            setResults(data.slice(0, 10));
+            setShowDropdown(true);
+          } else {
+            console.warn("fetchData did not return an array:", data);
+            setResults([]);
+            setShowDropdown(false);
+          }
+        } catch (error) {
+          console.error("Error in debounced search:", error);
+          setError(error.message || "An error occurred while searching");
           setResults([]);
           setShowDropdown(false);
+        } finally {
+          setIsLoading(false);
         }
       } else {
         setResults([]);
@@ -64,13 +75,6 @@ const ReusableSearch = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const highlightText = (text) => {
-    console.log("highlightText was called");
-    if (!text) return "";
-    const regex = new RegExp(`(${query})`, "gi");
-    return text.replace(regex, `<b>$1</b>`);
-  };
-
   const handleSearchClick = async () => {
     console.log("handleSearchClick was called");
     if (disableSearchTrigger) {
@@ -82,25 +86,27 @@ const ReusableSearch = ({
 
     if (query.length >= 3) {
       console.log("query greater than 3 d");
-      const data = await fetchData(query);
-      console.log("data ==", data);
-      setShowDropdown(false);
-      onSearch?.(data);
-      //queryString?.(query);
+      setIsLoading(true);
+      setError(null);
+      try {
+        const data = await fetchData(query);
+        console.log("data ==", data);
+        setShowDropdown(false);
+        onSearch?.(data);
+      } catch (error) {
+        console.error("Error in handleSearchClick:", error);
+        setError(error.message || "An error occurred while searching");
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
   const handleSuggestionClick = (suggestion) => {
     console.log("HandleSuggestionClick was clicked");
-    //setSearchQuery(suggestion.arn);
-    //setHideSuggestionDiv(true);
-    //setSuggestions([]);
-    //console.log(" handleSuggestion Click before I get to search isSuggestionSelected ==",isSuggestionSelected);
-
-    console.log("NOAH");
-    //navigate("/search", { state: [suggestion], key: Date.now().toString() });
-
-    // handleSearch(suggestion.arn);
+    onSelect?.(suggestion);
+    setShowDropdown(false);
+    setQuery("");
   };
 
   return (
@@ -115,10 +121,8 @@ const ReusableSearch = ({
             onChange={(e) => setQuery(e.target.value)}
             placeholder={placeholder}
             style={inputStyle}
-            onSearch={(value) => {
-              handleSearchClick(value);
-            }}
-            //enterButton={<SearchOutlined />}
+            onSearch={handleSearchClick}
+            loading={isLoading}
           />
         ) : (
           <Input
@@ -128,10 +132,13 @@ const ReusableSearch = ({
             style={inputStyle}
           />
         )}
-        {/* {suggestions.map((item) => item.arn)} */}
+        {error && (
+          <div style={{ color: "red", marginTop: 4, fontSize: 12 }}>
+            {error}
+          </div>
+        )}
         {showDropdown && results.length > 0 && (
           <div
-            //ref={suggestionsRef}
             style={{
               position: "absolute",
               top: "100%",
@@ -151,25 +158,21 @@ const ReusableSearch = ({
               <div
                 key={index}
                 style={{
-                  padding: "2px 12px",
+                  padding: "8px 12px",
                   cursor: "pointer",
                   borderBottom: darkMode ? "1px solid #555" : "1px solid #ddd",
                 }}
-                onClick={() => {
-                  onSelect?.(item);
-                  setShowDropdown(false);
-                  setQuery("");
-                }}
+                onClick={() => handleSuggestionClick(item)}
               >
                 <div
                   style={{
                     fontWeight: "bold",
                     whiteSpace: "nowrap",
-                    marginBottom: "1px",
+                    marginBottom: "4px",
                     lineHeight: "1.2",
                   }}
                 >
-                  {item.name}
+                  {item.firstName} {item.lastName}
                 </div>
                 <div
                   style={{
@@ -179,58 +182,13 @@ const ReusableSearch = ({
                     lineHeight: "1.2",
                   }}
                 >
-                  Type: {item.type || "N/A"} • Category:{" "}
-                  {item.category || "N/A"} • Region: {item.region || "N/A"} •
-                  Status: {item.status || "N/A"}
+                  Email: {item.email} • Access Level: {item.accessLevel}
                 </div>
               </div>
             ))}
           </div>
         )}
       </div>
-
-      {/* <Input.Search
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder={placeholder}
-        enterButton={<SearchOutlined />}
-        onSearch={handleSearchClick}
-        style={inputStyle} // 👈 apply here
-      /> */}
-
-      {/* {showDropdown && results.length > 0 && (
-        <div
-          style={{
-            position: "absolute",
-            top: inputStyle?.height ? parseInt(inputStyle.height) + 10 : 40,
-            width: inputStyle?.width || "100%",
-            background: darkMode ? "#333" : "#fff",
-            color: darkMode ? "#fff" : "#000",
-            border: "1px solid #ddd",
-            zIndex: 1000,
-            maxHeight: 300,
-            overflowY: "auto",
-            borderRadius: 4,
-          }}
-        >
-          <List
-            itemLayout="horizontal"
-            dataSource={results}
-            renderItem={(item) => (
-              <List.Item
-                onClick={() => {
-                  onSelect?.(item);
-                  setShowDropdown(false);
-                  setQuery("");
-                }}
-                style={{ cursor: "pointer" }}
-              >
-                {item.name || item.label || item.title}
-              </List.Item>
-            )}
-          />
-        </div> */}
-      {/* )} */}
     </div>
   );
 };

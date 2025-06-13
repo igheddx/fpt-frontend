@@ -1144,6 +1144,10 @@ const MyOrg = () => {
                 organizationId: selectedOrgId,
                 customerId: selectedCustId,
                 accountId: selectedCloudId,
+                value1: null,
+                value2: null,
+                isActive: true,
+                createDateTime: new Date().toISOString(),
               },
             });
           }

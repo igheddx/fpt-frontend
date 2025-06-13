@@ -158,6 +158,7 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
 
         // For root users, use the dedicated unrestricted endpoint
         if (currentUserAccessLevel === "root") {
+          console.log("Using unrestricted search endpoint for root user");
           const data = await apiCall({
             method: "get",
             url: "/api/Profile/search-unrestricted",
@@ -175,6 +176,9 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
         }
 
         // For admin and other users, use the existing search with unrestricted flag
+        console.log(
+          "Using standard search endpoint with unrestricted flag for admin"
+        );
         const data = await apiCall({
           method: "get",
           url: "/api/Profile/search-by-name",
@@ -190,6 +194,18 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
         return data;
       } catch (error) {
         console.error("Error searching profiles:", error);
+        // Add more detailed error logging
+        if (error.response) {
+          console.error("Error response:", {
+            status: error.response.status,
+            data: error.response.data,
+            headers: error.response.headers,
+          });
+        } else if (error.request) {
+          console.error("No response received:", error.request);
+        } else {
+          console.error("Error setting up request:", error.message);
+        }
         return [];
       }
     }

@@ -292,25 +292,8 @@ const AppHeader = () => {
     { title: "System Alert", description: "Scheduled maintenance at 10 PM" },
   ];
 
-  // Get role-based navigation items
-  const getNavigationItems = () => {
-    if (!accountContext) {
-      // Default items when no context is set
-      return [
-        { key: "1", label: "Dashboard", onClick: () => navigate("/dashboard") },
-      ];
-    }
-
-    // Use the context's getNavigationItems function
-    const contextNavItems = getContextNavigationItems();
-    return contextNavItems.map((item, index) => ({
-      key: (index + 1).toString(),
-      label: item.label,
-      onClick: () => navigate(item.path),
-    }));
-  };
-
-  const items = getNavigationItems();
+  // Use the context version instead
+  const items = getContextNavigationItems();
 
   const highlightText = (text) => {
     const regex = new RegExp(`(${searchQuery})`, "gi");
@@ -452,9 +435,9 @@ const AppHeader = () => {
               <Menu
                 theme="dark"
                 mode="horizontal"
-                defaultSelectedKeys={["1"]}
+                selectedKeys={[window.location.pathname]}
                 items={items.map((item, index) => ({
-                  ...item,
+                  key: item.path,
                   label: (
                     <div
                       key={index}
@@ -464,6 +447,7 @@ const AppHeader = () => {
                     </div>
                   ),
                 }))}
+                onClick={({ key }) => navigate(key)}
                 style={{ flex: 1, minWidth: 0, background: "transparent" }}
               />
               <Badge count={notifications.length} style={{ marginRight: 20 }}>

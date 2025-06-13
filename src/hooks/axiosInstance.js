@@ -9,8 +9,8 @@ const axiosInstance = axios.create({
     "Content-Type": "application/json",
   },
   withCredentials: true,
-  // Add timeout and validate status
-  timeout: 10000,
+  // Increase timeout for debugging
+  timeout: 30000,
   validateStatus: function (status) {
     return status >= 200 && status < 500; // Accept all status codes less than 500
   },
@@ -31,6 +31,7 @@ axiosInstance.interceptors.request.use(
     // Retrieve the current access token and API key
     const token = sessionStorage.getItem("accessToken");
     const xApiKey = getApiKey(); // Get the latest API key
+    const accessLevel = sessionStorage.getItem("accessLevel");
 
     // Log for debugging
     console.log("Request Config:", {
@@ -38,6 +39,9 @@ axiosInstance.interceptors.request.use(
       method: config.method,
       headers: config.headers,
       data: config.data,
+      token: token ? "present" : "missing",
+      xApiKey: xApiKey ? "present" : "missing",
+      accessLevel: accessLevel || "not set",
     });
 
     if (token) {
@@ -46,15 +50,28 @@ axiosInstance.interceptors.request.use(
     if (xApiKey) {
       config.headers["X-Api-Key"] = xApiKey;
     }
+    if (accessLevel) {
+      config.headers["X-Access-Level"] = accessLevel;
+    }
 
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => {
+    console.error("Request Interceptor Error:", error);
+    return Promise.reject(error);
+  }
 );
 
 // Response Interceptor: Handle Expired Token (401)
 axiosInstance.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log("Response received:", {
+      url: response.config.url,
+      status: response.status,
+      data: response.data,
+    });
+    return response;
+  },
   async (error) => {
     console.error("API Error:", {
       message: error.message,

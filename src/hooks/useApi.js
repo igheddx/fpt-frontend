@@ -18,8 +18,8 @@ const useApi = () => {
         if (config.data) {
           // Ensure proper casing for authentication fields
           config.data = {
-            Username: config.data.username || config.data.Username,
-            Password: config.data.password || config.data.Password,
+            Username: config.data.Username || config.data.username,
+            Password: config.data.Password || config.data.password,
           };
         }
       }
