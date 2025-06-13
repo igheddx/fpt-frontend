@@ -6,6 +6,55 @@ import useApi from "../hooks/useApi";
 
 const { Title } = Typography;
 
+// Password validation helper function
+const validatePassword = (password, username, email) => {
+  const errors = [];
+
+  // Check minimum length
+  if (password.length < 12) {
+    errors.push("At least 12 characters");
+  }
+
+  // Check character types
+  const hasLowerCase = /[a-z]/.test(password);
+  const hasUpperCase = /[A-Z]/.test(password);
+  const hasNumbers = /[0-9]/.test(password);
+  const hasSpecialChars = /[!@#$%^&*]/.test(password);
+
+  const characterTypesCount = [
+    hasLowerCase,
+    hasUpperCase,
+    hasNumbers,
+    hasSpecialChars,
+  ].filter(Boolean).length;
+
+  if (characterTypesCount < 3) {
+    errors.push(
+      "Must include at least 3 of: lowercase, uppercase, numbers, special characters (!@#$%^&*)"
+    );
+  }
+
+  // Check for username/email presence
+  const emailPrefix = email?.split("@")[0];
+  if (username && password.toLowerCase().includes(username.toLowerCase())) {
+    errors.push("Cannot contain username");
+  }
+  if (
+    emailPrefix &&
+    password.toLowerCase().includes(emailPrefix.toLowerCase())
+  ) {
+    errors.push("Cannot contain email prefix");
+  }
+
+  // Check common passwords
+  const commonPasswords = ["password", "123456", "qwerty", "admin123"];
+  if (commonPasswords.includes(password.toLowerCase())) {
+    errors.push("Cannot use a common password");
+  }
+
+  return errors;
+};
+
 const ForgotPassword = () => {
   const [step, setStep] = useState(1);
   const [email, setEmail] = useState("");
@@ -209,6 +258,15 @@ const ForgotPassword = () => {
                   required: true,
                   message: "Please input your current password!",
                 },
+                {
+                  validator: (_, value) => {
+                    if (!value) return Promise.resolve();
+                    const errors = validatePassword(value, null, email);
+                    return errors.length === 0
+                      ? Promise.resolve()
+                      : Promise.reject(errors.join(", "));
+                  },
+                },
               ]}
             >
               <Input.Password />
@@ -218,6 +276,15 @@ const ForgotPassword = () => {
               label="New Password"
               rules={[
                 { required: true, message: "Please input your new password!" },
+                {
+                  validator: (_, value) => {
+                    if (!value) return Promise.resolve();
+                    const errors = validatePassword(value, null, email);
+                    return errors.length === 0
+                      ? Promise.resolve()
+                      : Promise.reject(errors.join(", "));
+                  },
+                },
               ]}
             >
               <Input.Password />

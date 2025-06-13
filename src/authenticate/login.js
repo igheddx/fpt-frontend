@@ -11,6 +11,55 @@ import { useAccountContext } from "../contexts/AccountContext";
 
 const { Title } = Typography;
 
+// Password validation helper function
+const validatePassword = (password, username, email) => {
+  const errors = [];
+
+  // Check minimum length
+  if (password.length < 12) {
+    errors.push("At least 12 characters");
+  }
+
+  // Check character types
+  const hasLowerCase = /[a-z]/.test(password);
+  const hasUpperCase = /[A-Z]/.test(password);
+  const hasNumbers = /[0-9]/.test(password);
+  const hasSpecialChars = /[!@#$%^&*]/.test(password);
+
+  const characterTypesCount = [
+    hasLowerCase,
+    hasUpperCase,
+    hasNumbers,
+    hasSpecialChars,
+  ].filter(Boolean).length;
+
+  if (characterTypesCount < 3) {
+    errors.push(
+      "Must include at least 3 of: lowercase, uppercase, numbers, special characters (!@#$%^&*)"
+    );
+  }
+
+  // Check for username/email presence
+  const emailPrefix = email?.split("@")[0];
+  if (username && password.toLowerCase().includes(username.toLowerCase())) {
+    errors.push("Cannot contain username");
+  }
+  if (
+    emailPrefix &&
+    password.toLowerCase().includes(emailPrefix.toLowerCase())
+  ) {
+    errors.push("Cannot contain email prefix");
+  }
+
+  // Check common passwords
+  const commonPasswords = ["password", "123456", "qwerty", "admin123"];
+  if (commonPasswords.includes(password.toLowerCase())) {
+    errors.push("Cannot use a common password");
+  }
+
+  return errors;
+};
+
 const Login = () => {
   const [form] = Form.useForm();
   const location = useLocation();
@@ -122,6 +171,9 @@ const Login = () => {
     setLoading(true);
     setError("");
     setIsDisabled(true);
+
+    // Get the API key before authentication
+    await getEncryptDecryptNoUserName();
 
     console.log("Username==", email);
     console.log("password==", password);
@@ -599,13 +651,30 @@ const Login = () => {
             <Form.Item
               name="password"
               rules={[
-                { required: true, message: "Please input your password!" },
+                {
+                  required: true,
+                  message: "Please input your password!",
+                },
+                {
+                  validator: (_, value) => {
+                    if (!value) return Promise.resolve();
+                    const errors = validatePassword(
+                      value,
+                      null,
+                      form.getFieldValue("email")
+                    );
+                    return errors.length === 0
+                      ? Promise.resolve()
+                      : Promise.reject(errors.join(", "));
+                  },
+                },
               ]}
             >
               <Input.Password
                 placeholder="Password"
+                value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                disabled={isDisabled}
+                className={darkMode ? "dark-mode-input" : ""}
               />
             </Form.Item>
             <div className="flex items-center justify-between">

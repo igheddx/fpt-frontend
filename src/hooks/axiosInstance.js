@@ -29,14 +29,8 @@ const getApiKey = () => {
 // Request Interceptor: Attach Authorization Token & X-Api-Key
 axiosInstance.interceptors.request.use(
   (config) => {
-    // Skip adding auth headers for authentication request
-    const isAuthRequest = config.url === "/api/Profile/authenticate";
-
-    // Attach headers dynamically
-    // Retrieve the current access token and API key
-    const token = sessionStorage.getItem("accessToken");
-    const xApiKey = getApiKey(); // Get the latest API key
-    const accessLevel = sessionStorage.getItem("accessLevel");
+    // Check if this is an authentication request
+    const isAuthRequest = config.url.includes("/api/Profile/authenticate");
 
     // Log for debugging
     console.log("Request Config:", {
@@ -44,22 +38,32 @@ axiosInstance.interceptors.request.use(
       method: config.method,
       headers: config.headers,
       data: config.data,
-      token: token ? "present" : "missing",
-      xApiKey: xApiKey ? "present" : "missing",
-      accessLevel: accessLevel || "not set",
+      isAuthRequest,
     });
 
-    // Only add auth headers if it's not an authentication request
-    if (!isAuthRequest) {
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
+    // For authentication request, only add API key
+    if (isAuthRequest) {
+      const xApiKey = getApiKey(); // Get the latest API key
       if (xApiKey) {
         config.headers["X-Api-Key"] = xApiKey;
       }
-      if (accessLevel) {
-        config.headers["X-Access-Level"] = accessLevel;
-      }
+      return config;
+    }
+
+    // For all other requests, add authorization token and access level
+    const token = sessionStorage.getItem("accessToken");
+    if (!token) {
+      // If no token is available and it's not an auth request, redirect to login
+      window.location.href = "/";
+      return Promise.reject("No access token available");
+    }
+
+    config.headers.Authorization = `Bearer ${token}`;
+
+    // Add access level if available
+    const accessLevel = sessionStorage.getItem("accessLevel");
+    if (accessLevel) {
+      config.headers["X-Access-Level"] = accessLevel;
     }
 
     return config;
@@ -93,8 +97,12 @@ axiosInstance.interceptors.response.use(
       },
     });
 
-    // Check if error is due to token expiration
-    if (error.response?.status === 401 && !error.config._retry) {
+    // Check if error is due to token expiration and it's not an authentication request
+    if (
+      error.response?.status === 401 &&
+      !error.config._retry &&
+      !error.config.url.includes("/api/Profile/authenticate")
+    ) {
       error.config._retry = true; // Mark this request as retried to prevent infinite loops
       console.log("Token expired! Attempting to refresh...");
 
@@ -144,7 +152,7 @@ axiosInstance.interceptors.response.use(
           refreshError.response?.status === 401 ||
           refreshError.response?.data?.message
             ?.toLowerCase()
-            .includes("expired");
+            ?.includes("expired");
 
         // Store the error message in sessionStorage to display it on the login page
         if (isRefreshTokenExpired) {
