@@ -99,6 +99,14 @@ const Login = () => {
 
   // Handle navigation state
   useEffect(() => {
+    // Check for auth error message from token expiration
+    const authError = sessionStorage.getItem("authError");
+    if (authError) {
+      setError(authError);
+      setIncorrectLogin(true);
+      sessionStorage.removeItem("authError"); // Clear the error after displaying it
+    }
+
     if (location.state?.email) {
       setEmail(location.state.email);
       form.setFieldsValue({ email: location.state.email });
@@ -302,6 +310,11 @@ const Login = () => {
       // Store authentication data
       sessionStorage.setItem("accessToken", profileData.token);
       sessionStorage.setItem("refreshToken", profileData.refreshToken);
+      sessionStorage.setItem("tokenExpiration", profileData.tokenExpiration);
+      sessionStorage.setItem(
+        "refreshTokenExpiration",
+        profileData.refreshTokenExpiration
+      );
       sessionStorage.setItem(
         "profileName",
         `${profileData.firstName} ${profileData.lastName}`

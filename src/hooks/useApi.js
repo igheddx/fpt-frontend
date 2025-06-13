@@ -32,7 +32,6 @@ const useApi = () => {
 
       const response = await axiosInstance({
         ...config,
-        withCredentials: true,
         headers: {
           ...config.headers,
           "Content-Type": "application/json",
@@ -42,35 +41,13 @@ const useApi = () => {
 
       return response.data;
     } catch (error) {
-      // Log error details for debugging
-      console.error("API Call Error:", {
-        url: config.url,
-        method: config.method,
-        data: config.data,
-        errorMessage: error.message,
-        errorResponse: error.response?.data,
-        status: error.response?.status,
-        headers: error.response?.headers,
-      });
-
-      // If it's a CORS error, provide a more helpful message
-      if (error.message === "Network Error" && !error.response) {
-        throw new Error(
-          "Unable to connect to the server. Please check if the server is running and try again."
-        );
+      // Let the axiosInstance interceptor handle 401 errors
+      if (error.response?.status === 401) {
+        throw error;
       }
 
-      // If it's a validation error from the backend, show the specific error message
-      if (error.response?.data?.errors) {
-        const errorMessages = Object.values(error.response.data.errors).flat();
-        throw new Error(errorMessages.join(", "));
-      }
-
-      // If there's a specific error message from the backend, use it
-      if (error.response?.data?.message) {
-        throw new Error(error.response.data.message);
-      }
-
+      // Handle other errors
+      console.error("API call failed:", error);
       throw error;
     }
   }, []);

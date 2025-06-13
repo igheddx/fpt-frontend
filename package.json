@@ -2,7 +2,6 @@
   "name": "fpt-app",
   "version": "0.1.0",
   "private": true,
-  "proxy": "https://kee2wx4p2lbovtwqpn5c7urhtq0faonv.lambda-url.us-east-2.on.aws",
   "dependencies": {
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",

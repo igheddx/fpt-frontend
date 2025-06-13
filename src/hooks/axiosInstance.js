@@ -8,12 +8,14 @@ const axiosInstance = axios.create({
     Accept: "application/json",
     "Content-Type": "application/json",
   },
-  withCredentials: true,
   // Increase timeout for debugging
   timeout: 30000,
   validateStatus: function (status) {
     return status >= 200 && status < 500; // Accept all status codes less than 500
   },
+  // Explicitly configure CORS
+  withCredentials: false,
+  crossDomain: true,
 });
 
 // Function to retrieve the current API Key (with or without username)
@@ -27,6 +29,9 @@ const getApiKey = () => {
 // Request Interceptor: Attach Authorization Token & X-Api-Key
 axiosInstance.interceptors.request.use(
   (config) => {
+    // Skip adding auth headers for authentication request
+    const isAuthRequest = config.url === "/api/Profile/authenticate";
+
     // Attach headers dynamically
     // Retrieve the current access token and API key
     const token = sessionStorage.getItem("accessToken");
@@ -44,14 +49,17 @@ axiosInstance.interceptors.request.use(
       accessLevel: accessLevel || "not set",
     });
 
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    if (xApiKey) {
-      config.headers["X-Api-Key"] = xApiKey;
-    }
-    if (accessLevel) {
-      config.headers["X-Access-Level"] = accessLevel;
+    // Only add auth headers if it's not an authentication request
+    if (!isAuthRequest) {
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+      if (xApiKey) {
+        config.headers["X-Api-Key"] = xApiKey;
+      }
+      if (accessLevel) {
+        config.headers["X-Access-Level"] = accessLevel;
+      }
     }
 
     return config;
@@ -85,41 +93,75 @@ axiosInstance.interceptors.response.use(
       },
     });
 
-    if (error.response && error.response.status === 401) {
+    // Check if error is due to token expiration
+    if (error.response?.status === 401 && !error.config._retry) {
+      error.config._retry = true; // Mark this request as retried to prevent infinite loops
       console.log("Token expired! Attempting to refresh...");
 
       try {
-        const refreshToken = localStorage.getItem("refreshToken");
+        const refreshToken = sessionStorage.getItem("refreshToken");
+        if (!refreshToken) {
+          throw new Error("No refresh token available");
+        }
+
+        // Call refresh token endpoint
         const refreshResponse = await axios.post(
-          `${API_BASE_URL}/api/profile/refreshtoken`,
+          `${API_BASE_URL}/api/Profile/refresh-token`,
+          { refreshToken },
           {
-            refreshToken,
+            headers: {
+              "Content-Type": "application/json",
+            },
           }
         );
 
-        if (refreshResponse.status === 200) {
-          const newAccessToken = refreshResponse.data.accessToken;
+        if (refreshResponse.data.token) {
+          // Store new tokens
+          const newAccessToken = refreshResponse.data.token;
           const newRefreshToken = refreshResponse.data.refreshToken;
 
           sessionStorage.setItem("accessToken", newAccessToken);
           sessionStorage.setItem("refreshToken", newRefreshToken);
 
-          // Retry the original request with the new token
+          // Update authorization header
           error.config.headers.Authorization = `Bearer ${newAccessToken}`;
+
+          // Retry the original request
           return axiosInstance(error.config);
         } else {
-          console.error("Token refresh failed. Logging out...");
-          setGlobalState("isAuthenticated", false);
-          sessionStorage.removeItem("accessToken");
-          sessionStorage.removeItem("refreshToken");
-          window.location.href = "/"; // Redirect to login
+          throw new Error("Failed to refresh token");
         }
       } catch (refreshError) {
         console.error("Error refreshing token:", refreshError);
-        setGlobalState("isAuthenticated", false);
+
+        // Clear tokens and authentication state
         sessionStorage.removeItem("accessToken");
         sessionStorage.removeItem("refreshToken");
+        setGlobalState("isAuthenticated", false);
+
+        // Check if the error is due to refresh token expiration
+        const isRefreshTokenExpired =
+          refreshError.response?.status === 401 ||
+          refreshError.response?.data?.message
+            ?.toLowerCase()
+            .includes("expired");
+
+        // Store the error message in sessionStorage to display it on the login page
+        if (isRefreshTokenExpired) {
+          sessionStorage.setItem(
+            "authError",
+            "Your session has expired. Please log in again."
+          );
+        } else {
+          sessionStorage.setItem(
+            "authError",
+            "Authentication failed. Please log in again."
+          );
+        }
+
+        // Redirect to login page
         window.location.href = "/";
+        return Promise.reject(refreshError);
       }
     }
 
