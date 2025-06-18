@@ -10,6 +10,8 @@ import {
   Switch,
   Alert,
   Space,
+  Row,
+  Col,
 } from "antd";
 
 import { SearchOutlined, PlusOutlined } from "@ant-design/icons";
@@ -21,8 +23,9 @@ import { updateDataById } from "../hooks/axiosFakeInstance";
 import axiosInstance from "../hooks/axiosInstance";
 import ReusableSearch from "../components/ReuseableSearch";
 import { generateUniqueNumber } from "../utils/randomNumber";
-import useApi from "../hooks/useApi";
+import { useApi } from "../hooks/useApi";
 import { useDarkMode } from "../config/DarkModeContext";
+import useEncryptDescrypt from "../hooks/useEncryptDescrypt";
 
 const { Option } = Select;
 
@@ -30,7 +33,7 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
   const { darkMode } = useDarkMode();
   const { switchContext } = useAccountContext();
   const [form] = Form.useForm();
-  const apiCall = useApi();
+  const { apiCall, isLoading, error } = useApi();
   const tableRef = useRef(null);
 
   // Initialize all state variables before any useEffects
@@ -84,6 +87,13 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
     message: "",
   });
 
+  // Loading states
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [orgLoading, setOrgLoading] = useState(false);
+
+  // Add the encryption hook at component level
+  const { getEncryptDecryptNoUserName } = useEncryptDescrypt();
+
   // Helper function to get profileId from session storage
   const getProfileIdFromSession = () => {
     try {
@@ -99,11 +109,11 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
 
   const fetchProfileData = async () => {
     try {
-      // Get profileId from session storage instead of hardcoding
+      setProfileLoading(true);
       const profileId = getProfileIdFromSession();
 
       if (!profileId) {
-        console.error("No profileId found in session storage");
+        console.log("No profile ID found. Please log in again.");
         setAlert({
           type: "error",
           message: "No profile ID found. Please log in again.",
@@ -113,8 +123,8 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
       }
 
       const profileResponse = await apiCall({
-        method: "get",
-        url: `/api/Profile/${profileId}`, // Use dynamic profileId
+        method: "GET",
+        url: `/api/Profile/${profileId}`,
       });
 
       const updatedProfile = {
@@ -132,28 +142,44 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
         active: profileResponse.isConfirmed,
       });
 
-      // Fetch organization hierarchy right after getting profile data
-      try {
-        const orgResponse = await apiCall({
-          method: "get",
-          url: `/api/Profile/${profileResponse.id}/organizations`,
-        });
-        setOrgCustAccountForProfile(orgResponse);
-      } catch (error) {
-        console.error("Error fetching organization hierarchy:", error);
-        setAlert({
-          type: "error",
-          message: "Failed to fetch organization hierarchy",
-          visible: true,
-        });
-      }
+      // Fetch organization hierarchy
+      await fetchOrgHierarchy(profileResponse.id);
     } catch (error) {
-      console.error("Error fetching profile:", error);
+      let errorMessage = "Failed to fetch profile data";
+      if (error.code === "ECONNABORTED") {
+        errorMessage = "Profile data request timed out. Please try again.";
+        console.log("Profile data request timed out. Please try again.");
+      }
       setAlert({
         type: "error",
-        message: "Failed to fetch profile data",
+        message: errorMessage,
         visible: true,
       });
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  const fetchOrgHierarchy = async (profileId) => {
+    try {
+      setOrgLoading(true);
+      const orgResponse = await apiCall({
+        method: "get",
+        url: `/api/Profile/${profileId}/organizations`,
+      });
+      setOrgCustAccountForProfile(orgResponse);
+    } catch (error) {
+      let errorMessage = "Failed to fetch organization hierarchy";
+      if (error.code === "ECONNABORTED") {
+        errorMessage = "Organization data request timed out. Please try again.";
+      }
+      setAlert({
+        type: "error",
+        message: errorMessage,
+        visible: true,
+      });
+    } finally {
+      setOrgLoading(false);
     }
   };
 
@@ -162,7 +188,7 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
     try {
       setAccountContextLoading(true);
 
-      // Get profileId from session storage instead of hardcoding
+      // Get profileId from session storage
       const profileId = getProfileIdFromSession();
 
       if (!profileId) {
@@ -175,7 +201,7 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
 
       const response = await apiCall({
         method: "get",
-        url: `/api/profile/${profileId}/organizations`, // Use dynamic profileId
+        url: `/api/profile/${profileId}/organizations`,
       });
 
       // Transform the data to create dropdown options
@@ -195,7 +221,7 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
                 accountName: account.name,
                 cloudType: account.cloudType,
                 defaultAccount: account.defaultAccount,
-                role: account.role || "viewer", // Include role from API response
+                role: account.role || "viewer",
               },
             });
           });
@@ -204,96 +230,28 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
 
       setAccountContextData(dropdownOptions);
 
-      // Check if there's already a saved account context from user's previous selection
+      // Check for existing context
       const existingContext = JSON.parse(
         sessionStorage.getItem("accountContext") || "{}"
       );
 
-      // Only initialize with default account if no existing context or if the existing context
-      // doesn't match any of the available accounts for this user
-      let shouldUseDefault = !existingContext.accountId;
-
-      if (existingContext.accountId) {
-        // Check if the existing context account is still available for this user
-        const existingAccountStillAvailable = dropdownOptions.some(
-          (option) =>
-            option.value.accountId === existingContext.accountId &&
-            option.value.customerId === existingContext.customerId
-        );
-
-        if (existingAccountStillAvailable) {
-          // Use the existing context - find the matching option and set it as selected
-          const existingOption = dropdownOptions.find(
-            (option) =>
-              option.value.accountId === existingContext.accountId &&
-              option.value.customerId === existingContext.customerId
-          );
-          if (existingOption) {
-            setSelectedAccountContext(existingOption.value);
-
-            // Also update the global context when restoring existing context
-            const profileData = JSON.parse(
-              sessionStorage.getItem("profileData") || "{}"
-            );
-            const accessLevel = sessionStorage.getItem("accessLevel");
-
-            switchContext({
-              // Profile-level properties (preserved from login)
-              profileId: profileData.profileId,
-              firstName: profileData.firstName,
-              lastName: profileData.lastName,
-              email: profileData.email,
-              accessLevel: accessLevel,
-
-              // Account-level properties (from existing context)
-              organizationId: existingOption.value.organizationId,
-              organizationName: existingOption.value.organizationName,
-              customerId: existingOption.value.customerId,
-              customerName: existingOption.value.customerName,
-              accountId: existingOption.value.accountId,
-              accountName: existingOption.value.accountName,
-              cloudType: existingOption.value.cloudType,
-              permissions: existingOption.value.role || "viewer",
-            });
-
-            console.log(
-              "Restored existing account context and updated global context:",
-              existingOption.value
-            );
-            shouldUseDefault = false;
-          }
-        } else {
-          console.log(
-            "Previously selected account no longer available, using default"
-          );
-          shouldUseDefault = true;
-        }
-      }
-
-      // Only set default account if no existing valid context
-      if (shouldUseDefault) {
+      // Find default account if no existing context
+      if (!existingContext.accountId) {
         const defaultAccount = dropdownOptions.find(
           (option) => option.value.defaultAccount === true
         );
         if (defaultAccount) {
-          setSelectedAccountContext(defaultAccount.value);
-
-          // INITIALIZE GLOBAL CONTEXT with default account
-          // Preserve profile-level properties from session storage
           const profileData = JSON.parse(
             sessionStorage.getItem("profileData") || "{}"
           );
           const accessLevel = sessionStorage.getItem("accessLevel");
 
-          switchContext({
-            // Profile-level properties (preserved from login)
+          const newContext = {
             profileId: profileData.profileId,
             firstName: profileData.firstName,
             lastName: profileData.lastName,
             email: profileData.email,
             accessLevel: accessLevel,
-
-            // Account-level properties (from selected account)
             organizationId: defaultAccount.value.organizationId,
             organizationName: defaultAccount.value.organizationName,
             customerId: defaultAccount.value.customerId,
@@ -301,12 +259,26 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
             accountId: defaultAccount.value.accountId,
             accountName: defaultAccount.value.accountName,
             cloudType: defaultAccount.value.cloudType,
-            permissions: defaultAccount.value.role || "viewer", // Use permissions instead of role
-          });
+            permissions: defaultAccount.value.role || "viewer",
+          };
 
+          setSelectedAccountContext(defaultAccount.value);
+          switchContext(newContext);
+          console.log("Set default account context:", newContext);
+        }
+      } else {
+        // Restore existing context
+        const existingOption = dropdownOptions.find(
+          (option) =>
+            option.value.accountId === existingContext.accountId &&
+            option.value.customerId === existingContext.customerId
+        );
+
+        if (existingOption) {
+          setSelectedAccountContext(existingOption.value);
           console.log(
-            "Default account context initialized:",
-            defaultAccount.value
+            "Restored existing account context:",
+            existingOption.value
           );
         }
       }
@@ -745,12 +717,62 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
     }
   };
 
+  // Password validation helper function from login.js
+  const validatePassword = (password, username, email) => {
+    const errors = [];
+
+    // Check minimum length
+    if (password.length < 12) {
+      errors.push("At least 12 characters");
+    }
+
+    // Check character types
+    const hasLowerCase = /[a-z]/.test(password);
+    const hasUpperCase = /[A-Z]/.test(password);
+    const hasNumbers = /[0-9]/.test(password);
+    const hasSpecialChars = /[!@#$%^&*]/.test(password);
+
+    const characterTypesCount = [
+      hasLowerCase,
+      hasUpperCase,
+      hasNumbers,
+      hasSpecialChars,
+    ].filter(Boolean).length;
+
+    if (characterTypesCount < 3) {
+      errors.push(
+        "Must include at least 3 of: lowercase, uppercase, numbers, special characters (!@#$%^&*)"
+      );
+    }
+
+    // Check for username/email presence
+    const emailPrefix = email?.split("@")[0];
+    if (username && password.toLowerCase().includes(username.toLowerCase())) {
+      errors.push("Cannot contain username");
+    }
+    if (
+      emailPrefix &&
+      password.toLowerCase().includes(emailPrefix.toLowerCase())
+    ) {
+      errors.push("Cannot contain email prefix");
+    }
+
+    // Check common passwords
+    const commonPasswords = ["password", "123456", "qwerty", "admin123"];
+    if (commonPasswords.includes(password.toLowerCase())) {
+      errors.push("Cannot use a common password");
+    }
+
+    return errors;
+  };
+
   const handlePasswordChange = async (values) => {
     try {
-      // Check if selectedData exists
-      if (!selectedData || !selectedData.profileId) {
+      // Get the current user's email from session storage
+      const profileData = JSON.parse(sessionStorage.getItem("profileData"));
+      if (!profileData?.email) {
         setPasswordAlert({
-          message: "No profile selected for password change",
+          message: "User email not found",
           type: "error",
           visible: true,
         });
@@ -767,38 +789,67 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
         return;
       }
 
-      setPasswordAlert({
-        message: "Updating password...",
-        type: "info",
-        visible: true,
-      });
+      // Validate password requirements
+      const passwordErrors = validatePassword(
+        values.newPassword,
+        null,
+        profileData.email
+      );
+      if (passwordErrors.length > 0) {
+        setPasswordAlert({
+          message: `Password validation failed: ${passwordErrors.join(", ")}`,
+          type: "error",
+          visible: true,
+        });
+        return;
+      }
 
-      await apiCall({
-        method: "put",
-        url: `/api/Profile/${selectedData.profileId}/password`,
-        data: {
-          currentPassword: values.currentPassword,
-          newPassword: values.newPassword,
-        },
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
+      // Get API key
+      await getEncryptDecryptNoUserName();
+      const apiKey = sessionStorage.getItem("xapikeyNoAccessToken");
 
+      if (!apiKey) {
+        throw new Error("Failed to get API key");
+      }
+
+      // Make the API call to update password
+      const response = await fetch(
+        "http://localhost:5000/api/Profile/update-password",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Api-Key": apiKey,
+          },
+          body: JSON.stringify({
+            email: profileData.email,
+            currentPassword: values.currentPassword,
+            newPassword: values.newPassword,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to update password");
+      }
+
+      // Show success alert and clear form
       setPasswordAlert({
         message: "Password updated successfully",
         type: "success",
         visible: true,
       });
 
-      passwordForm.resetFields();
+      // Clear the password fields
+      passwordForm.setFieldsValue({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      });
     } catch (error) {
-      console.error("Password update error:", error);
-      // Check if it's a "Current password is incorrect" error
-      const errorMessage =
-        error.response?.data?.message || error.message || error;
       setPasswordAlert({
-        message: errorMessage,
+        message: error.message || "Failed to update password",
         type: "error",
         visible: true,
       });
@@ -912,35 +963,25 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
 
   // Handle account context selection
   const handleAccountContextChange = (value) => {
-    console.log("@@Account selected ==", value);
     const selectedAccount = accountContextData.find(
       (option) => option.key === value
     );
 
     if (selectedAccount) {
-      console.log("@@orgId==", selectedAccount.value.organizationId);
-      console.log("@@custgId==", selectedAccount.value.customerId);
-      console.log("@@acctId==", selectedAccount.value.accountId);
-
       setSelectedAccountContext(selectedAccount.value);
 
-      // Update global context - THIS IS THE KEY INTEGRATION
-      // Preserve profile-level properties from session storage
+      // Update global context
       const profileData = JSON.parse(
         sessionStorage.getItem("profileData") || "{}"
       );
       const accessLevel = sessionStorage.getItem("accessLevel");
 
-      console.log("@@profileId", profileData.profileId);
       const newContext = {
-        // Profile-level properties (preserved from login)
         profileId: profileData.profileId,
         firstName: profileData.firstName,
         lastName: profileData.lastName,
         email: profileData.email,
         accessLevel: accessLevel,
-
-        // Account-level properties (from selected account)
         organizationId: selectedAccount.value.organizationId,
         organizationName: selectedAccount.value.organizationName,
         customerId: selectedAccount.value.customerId,
@@ -948,21 +989,15 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
         accountId: selectedAccount.value.accountId,
         accountName: selectedAccount.value.accountName,
         cloudType: selectedAccount.value.cloudType,
-        permissions: selectedAccount.value.role || "viewer", // Use permissions instead of role for account role
+        permissions: selectedAccount.value.role || "viewer",
       };
 
-      console.log("@@ newContext==", JSON.stringify(newContext));
-      // Update global context
       switchContext(newContext);
-
-      // Save the selected account context to sessionStorage for persistence
       sessionStorage.setItem(
         "accountContext",
         JSON.stringify(selectedAccount.value)
       );
-
-      console.log("Selected account context:", selectedAccount.value);
-      console.log("Global context updated and saved to sessionStorage!");
+      console.log("Updated account context:", newContext);
     }
   };
 
@@ -1071,6 +1106,27 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+      {/* Show loading states */}
+      {(profileLoading || orgLoading) && (
+        <Alert
+          message="Loading..."
+          type="info"
+          showIcon
+          style={{ marginBottom: "16px" }}
+        />
+      )}
+
+      {/* Show error state */}
+      {error && (
+        <Alert
+          message="Error"
+          description={error}
+          type="error"
+          showIcon
+          style={{ marginBottom: "16px" }}
+        />
+      )}
+
       {/* Change Account Context Section */}
       <div
         style={{
@@ -1397,6 +1453,15 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
                     {
                       required: true,
                       message: "Please enter your new password",
+                    },
+                    {
+                      validator: (_, value) => {
+                        if (!value) return Promise.resolve();
+                        const errors = validatePassword(value);
+                        return errors.length === 0
+                          ? Promise.resolve()
+                          : Promise.reject(errors.join(", "));
+                      },
                     },
                   ]}
                 >

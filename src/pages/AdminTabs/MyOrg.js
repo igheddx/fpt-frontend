@@ -31,7 +31,7 @@ import { deleteProfileFromCustomer } from "../../hooks/axiosFakeInstance";
 import { generateUniqueNumber } from "../../utils/randomNumber";
 import { type } from "@testing-library/user-event/dist/type";
 import axios from "axios";
-import useApi from "../../hooks/useApi";
+import { useApi } from "../../hooks/useApi";
 const { Option } = Select;
 const { Title } = Typography;
 
@@ -61,6 +61,7 @@ const dummyProfiles = [
 
 const MyOrg = () => {
   const { darkMode } = useDarkMode();
+  const { apiCall } = useApi(); // Fix: Properly destructure apiCall
   const [searchValue, setSearchValue] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [selectedOrg, setSelectedOrg] = useState([]);
@@ -110,8 +111,6 @@ const MyOrg = () => {
   const [profileCloudCustomer, setProfileCloudCustomer] = useState([]); //store profile linked to customer
   const [selectedCustName, setSelectedCustName] = useState("");
   const [selectedCloudName, setSelectedCloudName] = useState("");
-
-  const apiCall = useApi();
 
   useEffect(() => {
     setNewCustomers([]); //reset onload
@@ -228,7 +227,7 @@ const MyOrg = () => {
     if (value.length >= 3) {
       try {
         const data = await apiCall({
-          method: "get",
+          method: "GET",
           url: "/api/Organizations/search-by-name",
           params: { name: value },
         });

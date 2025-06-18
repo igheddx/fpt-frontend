@@ -9,12 +9,29 @@ import {
   Alert,
   AutoComplete,
   Switch,
+  Space,
+  Row,
+  Col,
 } from "antd";
 import { useDarkMode } from "../../config/DarkModeContext";
 import { useAccountContext } from "../../contexts/AccountContext";
-import useApi from "../../hooks/useApi";
-import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
+import { useApi } from "../../hooks/useApi";
+import {
+  DeleteOutlined,
+  PlusOutlined,
+  SearchOutlined,
+} from "@ant-design/icons";
 const { Option } = Select;
+
+// Helper function to get profile ID from session storage
+const getProfileIdFromSession = () => {
+  const profileId = sessionStorage.getItem("profileId");
+  if (!profileId) {
+    console.warn("No profile ID found in session storage");
+    return null;
+  }
+  return profileId;
+};
 
 const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
   const [form] = Form.useForm();
@@ -24,9 +41,10 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
   const [alertType, setAlertType] = useState("success"); // "success", "error", "info"
   const [policyType, setPolicyType] = useState("");
   const tableRef = useRef(null);
+  const searchTimeout = useRef(null);
   const { darkMode } = useDarkMode();
   const { accountContext, triggerPolicyRefresh } = useAccountContext();
-  const apiCall = useApi();
+  const { apiCall } = useApi();
 
   // Add state for account context data
   const [allAccountsData, setAllAccountsData] = useState([]);
@@ -45,10 +63,14 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
   useEffect(() => {
     console.log("MyPolicy - accountContext:", accountContext);
     if (accountContext) {
-      console.log(
-        "MyPolicy - accountContext structure:",
-        JSON.stringify(accountContext, null, 2)
-      );
+      console.log("MyPolicy - Current Account:", {
+        organizationId: accountContext.organizationId,
+        organizationName: accountContext.organizationName,
+        customerId: accountContext.customerId,
+        customerName: accountContext.customerName,
+        accountId: accountContext.accountId,
+        accountName: accountContext.accountName,
+      });
     }
   }, [accountContext]);
 
@@ -59,56 +81,17 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
     }
   }, [form, isEditMode]);
 
-  // Transform the data to create dropdown options
-  const transformAccountData = (response) => {
-    const dropdownOptions = [];
-    response.organizations?.forEach((org) => {
-      org.customers?.forEach((customer) => {
-        customer.accounts?.forEach((account) => {
-          const label = `${customer.name} -- ${account.name} - ${account.cloudType}`;
-          dropdownOptions.push({
-            key: `${org.orgId}-${customer.customerId}-${account.accountId}`,
-            label: label,
-            value: label, // Use the label as the value for the Select component
-            data: {
-              // Store the full data object separately
-              organizationId: org.orgId,
-              organizationName: org.name,
-              customerId: customer.customerId,
-              customerName: customer.name,
-              accountId: account.accountId,
-              accountName: account.name,
-              cloudType: account.cloudType,
-              defaultAccount: account.defaultAccount,
-              role: account.role || "viewer",
-            },
-          });
-        });
-      });
-    });
-    return dropdownOptions;
-  };
+  // Fetch account data when accountContext changes
+  useEffect(() => {
+    fetchAllAccountsData();
+  }, [accountContext]); // Add accountContext as dependency
 
   // Modify the fetchAllAccountsData function
   const fetchAllAccountsData = async () => {
     try {
       setAccountsLoading(true);
 
-      const getProfileIdFromSession = () => {
-        try {
-          const profileData = JSON.parse(
-            sessionStorage.getItem("profileData") || "{}"
-          );
-          return profileData.profileId;
-        } catch (error) {
-          console.error(
-            "Error parsing profile data from session storage:",
-            error
-          );
-          return null;
-        }
-      };
-
+      // Get profileId from session storage
       const profileId = getProfileIdFromSession();
 
       if (!profileId) {
@@ -119,18 +102,62 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
         return;
       }
 
+      // Get organizations data
       const response = await apiCall({
-        method: "get",
+        method: "GET",
         url: `/api/profile/${profileId}/organizations`,
       });
 
       console.log("MyPolicy - API Response:", response);
 
-      const dropdownOptions = transformAccountData(response);
+      if (!response || !response.organizations) {
+        console.error("Invalid response format:", response);
+        setAllAccountsData([]);
+        return;
+      }
+
+      // Transform the data to create dropdown options
+      const dropdownOptions = [];
+      response.organizations?.forEach((org) => {
+        org.customers?.forEach((customer) => {
+          customer.accounts?.forEach((account) => {
+            const label = `${customer.name} -- ${account.name} - ${account.cloudType}`;
+            dropdownOptions.push({
+              key: `${org.orgId}-${customer.customerId}-${account.accountId}`,
+              label: label,
+              value: `${org.orgId}-${customer.customerId}-${account.accountId}`,
+              data: {
+                organizationId: org.orgId,
+                organizationName: org.name,
+                customerId: customer.customerId,
+                customerName: customer.name,
+                accountId: account.accountId,
+                accountName: account.name,
+                cloudType: account.cloudType,
+                defaultAccount: account.defaultAccount,
+                role: account.role || "viewer",
+              },
+            });
+          });
+        });
+      });
+
       console.log("MyPolicy - Dropdown Options:", dropdownOptions);
       setAllAccountsData(dropdownOptions);
+
+      // If we have account context, pre-select the current account
+      if (accountContext) {
+        const currentAccountKey = `${accountContext.organizationId}-${accountContext.customerId}-${accountContext.accountId}`;
+        const matchingOption = dropdownOptions.find(
+          (option) => option.key === currentAccountKey
+        );
+        if (matchingOption) {
+          form.setFieldValue("cloudAccounts", matchingOption.value);
+        }
+      }
     } catch (error) {
       console.error("Error fetching account context data:", error);
+      message.error("Failed to load account data");
     } finally {
       setAccountsLoading(false);
     }
@@ -150,99 +177,31 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
 
   // Fetch all policies from database
   const fetchPolicies = async () => {
+    const userAccessLevel = sessionStorage.getItem("accessLevel");
+    const profileId = getProfileIdFromSession();
+
     try {
-      setPoliciesLoading(true);
-      const response = await apiCall({
-        method: "get",
-        url: "/api/Policy",
-      });
+      let response;
+      if (userAccessLevel === "admin" || userAccessLevel === "root") {
+        response = await apiCall({
+          method: "GET",
+          url: `/api/Policy?createdById=${profileId}`,
+        });
+      } else {
+        response = await apiCall({
+          method: "GET",
+          url: "/api/Policy?status=Submitted",
+        });
+      }
 
       console.log("Policies from API:", response);
       setPolicies(response || []);
-
-      // Also update submitted data for table display
-      const transformedPolicies = await Promise.all(
-        (response || []).map(async (policy) => {
-          console.log("Transforming policy:", policy);
-
-          // Find matching account data to get cloud type
-          let customerAccountDisplay = "Unknown -- Unknown";
-
-          if (policy.customerName && policy.accountName) {
-            // Try to find matching account to get cloud type
-            const matchingAccount = allAccountsData.find((acc) => {
-              const accountData = acc.data;
-              return (
-                accountData.customerId === policy.customerId &&
-                accountData.accountId === policy.accountId
-              );
-            });
-
-            if (matchingAccount) {
-              customerAccountDisplay = `${policy.customerName} -- ${policy.accountName} - ${matchingAccount.data.cloudType}`;
-            } else {
-              // Fallback without cloud type
-              customerAccountDisplay = `${policy.customerName} -- ${policy.accountName}`;
-            }
-          }
-
-          console.log("Customer Account Display:", customerAccountDisplay);
-
-          // For Tag policies, fetch key-value pairs from LOVs table
-          let tagKeyValue = { key: policy.value1, value: policy.value2 };
-          let totalTags = 0;
-          if (policy.type === "Tag") {
-            try {
-              const lovResponse = await apiCall({
-                method: "get",
-                url: `/api/LOV/search?description=KEYVALUE&generalId=${policy.id}`,
-              });
-
-              totalTags = lovResponse?.length || 0;
-
-              // Get the first tag pair for table display
-              if (lovResponse && lovResponse.length > 0) {
-                tagKeyValue = {
-                  key: lovResponse[0].value1,
-                  value: lovResponse[0].value2,
-                };
-              } else {
-                // No LOV entries found, show placeholder
-                tagKeyValue = {
-                  key: "No tags",
-                  value: "defined",
-                };
-              }
-            } catch (error) {
-              console.error("Error fetching tag key-value pairs:", error);
-              // Show error state in UI
-              tagKeyValue = {
-                key: "Error",
-                value: "loading tags",
-              };
-            }
-          }
-
-          return {
-            policyType: policy.type,
-            policyName: policy.name,
-            tagKey: tagKeyValue.key,
-            tagValue: tagKeyValue.value,
-            totalTags,
-            isActive: policy.isActive,
-            cloudAccounts: customerAccountDisplay,
-            id: policy.id,
-            customerId: policy.customerId,
-            accountId: policy.accountId,
-          };
-        })
-      );
-
-      console.log("Transformed policies:", transformedPolicies);
-      setSubmittedData(transformedPolicies);
+      setSubmittedData(response || []);
     } catch (error) {
       console.error("Error fetching policies:", error);
       message.error("Failed to fetch policies");
+      setPolicies([]);
+      setSubmittedData([]);
     } finally {
       setPoliciesLoading(false);
     }
@@ -295,26 +254,48 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
     if (searchTerm.length < 3) {
       setSearchResults([]);
       setShowSuggestions(false);
+      setIsSearching(false);
       return;
     }
 
     setIsSearching(true);
     try {
+      // Add a search delay to prevent too many requests
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
       const response = await apiCall({
         method: "get",
         url: "/api/Policy/search",
         params: {
           name: searchTerm,
+          limit: 10, // Limit results for better performance
         },
       });
 
       console.log("Policy search response:", response);
-      setSearchResults(response || []);
-      setShowSuggestions(true);
+      if (Array.isArray(response)) {
+        setSearchResults(response);
+        setShowSuggestions(true);
+        if (response.length === 0) {
+          message.info("No matching policies found");
+        }
+      } else {
+        console.warn("Unexpected response format:", response);
+        setSearchResults([]);
+        message.warning("Unexpected response format from server");
+      }
     } catch (error) {
       console.error("Error searching policies:", error);
-      message.error("Failed to search policies");
+
+      // Handle timeout specifically
+      if (error.message?.includes("timeout")) {
+        message.error("Search request timed out. Please try again.");
+      } else {
+        message.error("Failed to search policies. Please try again.");
+      }
+
       setSearchResults([]);
+      setShowSuggestions(false);
     } finally {
       setIsSearching(false);
     }
@@ -324,7 +305,13 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
   const handleSearchChange = (value) => {
     setSearchValue(value);
     if (value) {
-      searchPolicies(value);
+      // Debounce the search to prevent too many API calls
+      if (searchTimeout.current) {
+        clearTimeout(searchTimeout.current);
+      }
+      searchTimeout.current = setTimeout(() => {
+        searchPolicies(value);
+      }, 500);
     } else {
       setSearchResults([]);
       setShowSuggestions(false);
@@ -394,8 +381,10 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
     value: `${policy.name} (${policy.type})`,
     label: (
       <div style={{ padding: "4px 0" }}>
-        <div style={{ fontWeight: "bold" }}>{policy.name}</div>
-        <div style={{ fontSize: "12px", color: "#666" }}>
+        <div style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#000" }}>
+          {policy.name}
+        </div>
+        <div style={{ fontSize: "12px", color: darkMode ? "#999" : "#666" }}>
           Type: {policy.type} | Customer: {policy.customerName || "N/A"} |
           Account: {policy.accountName || "N/A"}
         </div>
@@ -422,11 +411,60 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
     setShowAlert(false);
   };
 
+  // Add effect to initialize form with account context
+  useEffect(() => {
+    if (accountContext) {
+      const currentAccountKey = `${accountContext.organizationId}-${accountContext.customerId}-${accountContext.accountId}`;
+      const matchingOption = allAccountsData.find(
+        (option) => option.key === currentAccountKey
+      );
+      if (matchingOption) {
+        form.setFieldValue("cloudAccounts", matchingOption.value);
+      }
+    }
+  }, [accountContext, allAccountsData, form]);
+
+  // Add effect to fetch account data when component mounts or account context changes
+  useEffect(() => {
+    if (accountContext) {
+      fetchAllAccountsData();
+    }
+  }, [accountContext]);
+
+  // Update the onFinish handler to use the selected account
   const onFinish = async (values) => {
     try {
       setSavingPolicy(true);
-      hideAlert(); // Hide any existing alert
+      hideAlert();
       console.log("Form values:", values);
+
+      // Find the selected account data
+      const selectedAccount = allAccountsData.find(
+        (acc) => acc.value === values.cloudAccounts
+      );
+
+      if (!selectedAccount) {
+        showAlertMessage("No valid account selected", "error");
+        return;
+      }
+
+      const accountData = selectedAccount.data;
+
+      // Create the policy object
+      const basePolicy = {
+        type: values.policyType,
+        name: values.policyName,
+        value1: values.policyType === "Tag" ? null : values.value1 || "",
+        value2: values.policyType === "Tag" ? null : values.value2 || "",
+        isActive: values.status === "Active",
+        organizationId: accountData.organizationId,
+        organizationName: accountData.organizationName,
+        customerId: accountData.customerId,
+        customerName: accountData.customerName,
+        accountId: accountData.accountId,
+        accountName: accountData.accountName,
+        cloudType: accountData.cloudType,
+      };
 
       // Validate tag values for Tag policies
       if (values.policyType === "Tag") {
@@ -449,33 +487,6 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
           return;
         }
       }
-
-      // Extract selected account information
-      const selectedAccount = allAccountsData.find(
-        (acc) => acc.label === values.cloudAccounts
-      );
-      const accountData = selectedAccount ? selectedAccount.data : null;
-
-      if (!accountData) {
-        showAlertMessage("No valid accounts selected", "error");
-        return;
-      }
-
-      // Create the base policy without value1/value2 for Tag type
-      const basePolicy = {
-        type: values.policyType,
-        name: values.policyName,
-        value1: values.policyType === "Tag" ? null : values.value1 || "",
-        value2: values.policyType === "Tag" ? null : values.value2 || "",
-        isActive: values.status === "Active",
-        organizationId: accountData.organizationId,
-        organizationName: accountData.organizationName,
-        customerId: accountData.customerId,
-        customerName: accountData.customerName,
-        accountId: accountData.accountId,
-        accountName: accountData.accountName,
-        cloudType: accountData.cloudType,
-      };
 
       // Create the policy first
       const policyResponse = await apiCall({
@@ -580,10 +591,7 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
       }
     } catch (error) {
       console.error("Error saving policy:", error);
-      showAlertMessage(
-        isEditMode ? "Failed to update policy" : "Failed to create policy",
-        "error"
-      );
+      showAlertMessage("Failed to save policy", "error");
     } finally {
       setSavingPolicy(false);
     }
@@ -708,8 +716,8 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
   };
 
   const columns = [
-    { title: "Policy Type", dataIndex: "policyType", key: "policyType" },
-    { title: "Policy Name", dataIndex: "policyName", key: "policyName" },
+    { title: "Policy Type", dataIndex: "type", key: "type" },
+    { title: "Policy Name", dataIndex: "name", key: "name" },
     {
       title: "Status",
       dataIndex: "isActive",
@@ -726,33 +734,38 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
       ),
     },
     {
-      title: "Customer/Account",
-      dataIndex: "cloudAccounts",
-      key: "cloudAccounts",
+      title: "Customer",
+      dataIndex: "customerName",
+      key: "customerName",
     },
     {
-      title: "Tag Key-Value Pairs",
-      key: "tagPairs",
-      render: (_, record) => {
-        if (record.policyType !== "Tag") {
-          return "-";
-        }
-        return (
-          <div>
-            <div>
-              {record.tagKey} = {record.tagValue}
-            </div>
-            {record.totalTags > 1 && (
-              <div
-                style={{ color: "#666", fontSize: "12px", marginTop: "4px" }}
-              >
-                +{record.totalTags - 1} more pairs
-              </div>
-            )}
-          </div>
-        );
-      },
+      title: "Account",
+      dataIndex: "accountName",
+      key: "accountName",
     },
+    // {
+    //   title: "Tag Key-Value Pairs",
+    //   key: "tagPairs",
+    //   render: (_, record) => {
+    //     if (record.policyType !== "Tag") {
+    //       return "-";
+    //     }
+    //     return (
+    //       <div>
+    //         <div>
+    //           {record.tagKey} = {record.tagValue}
+    //         </div>
+    //         {record.totalTags > 1 && (
+    //           <div
+    //             style={{ color: "#666", fontSize: "12px", marginTop: "4px" }}
+    //           >
+    //             +{record.totalTags - 1} more pairs
+    //           </div>
+    //         )}
+    //       </div>
+    //     );
+    //   },
+    // },
     {
       title: "Actions",
       key: "actions",
@@ -837,47 +850,40 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
         >
           Search Existing Policies
         </h3>
-        <AutoComplete
-          value={searchValue}
-          options={searchOptions}
-          onSearch={handleSearchChange}
-          onSelect={handlePolicySelect}
-          placeholder="Type 3+ characters to search for existing policies..."
-          size="large"
-          style={{ width: "100%" }}
-          dropdownStyle={{
-            backgroundColor: darkMode ? "#333" : "#fff",
-            color: darkMode ? "#fff" : "#000",
-          }}
-          filterOption={false}
-          notFoundContent={
-            isSearching ? (
-              <div style={{ padding: "8px", textAlign: "center" }}>
-                Searching...
-              </div>
-            ) : searchValue.length > 0 && searchValue.length < 3 ? (
-              <div
-                style={{
-                  padding: "8px",
-                  textAlign: "center",
-                  color: "#666",
-                }}
-              >
-                Type at least 3 characters to search
-              </div>
-            ) : searchValue.length >= 3 && searchResults.length === 0 ? (
-              <div
-                style={{
-                  padding: "8px",
-                  textAlign: "center",
-                  color: "#666",
-                }}
-              >
-                No policies found
-              </div>
-            ) : null
-          }
-        />
+        <Row gutter={[16, 16]}>
+          <Col span={24}>
+            <AutoComplete
+              value={searchValue}
+              options={searchOptions}
+              onSelect={handlePolicySelect}
+              onChange={handleSearchChange}
+              style={{ width: "100%" }}
+              placeholder="Search existing policies..."
+              dropdownStyle={{
+                background: darkMode ? "#1f1f1f" : "#fff",
+                boxShadow: darkMode
+                  ? "0 2px 8px rgba(0, 0, 0, 0.5)"
+                  : "0 2px 8px rgba(0, 0, 0, 0.15)",
+              }}
+              dropdownClassName={darkMode ? "dark-mode-dropdown" : ""}
+              notFoundContent={
+                <div
+                  style={{
+                    padding: "8px 12px",
+                    color: darkMode ? "#fff" : "#000",
+                    background: darkMode ? "#1f1f1f" : "#fff",
+                  }}
+                >
+                  {isSearching
+                    ? "Searching..."
+                    : searchValue.length >= 3
+                    ? "No matching policies found"
+                    : "Type at least 3 characters to search"}
+                </div>
+              }
+            />
+          </Col>
+        </Row>
       </div>
 
       {/* Form Section */}
@@ -1036,6 +1042,8 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
                   option?.label?.toLowerCase().includes(input.toLowerCase())
                 }
                 options={allAccountsData}
+                style={{ width: "100%" }}
+                showSearch
               />
             </Form.Item>
           </div>

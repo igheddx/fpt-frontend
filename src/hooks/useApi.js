@@ -1,58 +1,83 @@
-import { useCallback } from "react";
+import { useState, useCallback } from "react";
 import axiosInstance from "./axiosInstance";
 
 /**
  * useApi - Custom hook for making API calls with Axios
- * @returns {function} apiCall - (config) => Promise
+ * @returns {object} - An object containing apiCall, authenticate, loading, and error
  */
-const useApi = () => {
+export const useApi = () => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+
   /**
    * apiCall - Makes an API call using the configured axiosInstance
-   * @param {object} config - Axios request config (method, url, params, data, etc.)
+   * @param {object} config - The request configuration object
    * @returns {Promise} - Axios response promise
    */
   const apiCall = useCallback(async (config) => {
+    setIsLoading(true);
+    setError(null);
+
     try {
-      // Special handling for authentication requests
-      if (config.url === "/api/Profile/authenticate") {
-        if (config.data) {
-          // Ensure proper casing for authentication fields
-          config.data = {
-            Username: config.data.Username || config.data.username,
-            Password: config.data.Password || config.data.password,
-          };
-        }
-      }
-
-      console.log("Making API call:", {
-        url: config.url,
-        method: config.method,
-        data: config.data,
-      });
-
-      const response = await axiosInstance({
-        ...config,
-        headers: {
-          ...config.headers,
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-      });
-
+      const response = await axiosInstance(config);
       return response.data;
     } catch (error) {
-      // Let the axiosInstance interceptor handle 401 errors
-      if (error.response?.status === 401) {
-        throw error;
+      // Format error message based on error type
+      let errorMessage = "An unexpected error occurred";
+
+      if (error.code === "ECONNABORTED") {
+        errorMessage = `Request timed out. Please try again.`;
+      } else if (error.response) {
+        errorMessage =
+          error.response.data?.message ||
+          `Server error: ${error.response.status}`;
+      } else if (error.request) {
+        errorMessage = "No response received from server";
+      } else {
+        errorMessage = error.message;
       }
 
-      // Handle other errors
-      console.error("API call failed:", error);
+      setError(errorMessage);
       throw error;
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
-  return apiCall;
+  const authenticate = async (email, password) => {
+    try {
+      const response = await apiCall({
+        method: "POST",
+        url: "/api/Profile/authenticate",
+        data: {
+          username: email,
+          password,
+        },
+      });
+
+      if (response) {
+        // Store tokens in session storage
+        sessionStorage.setItem("token", response.token);
+        sessionStorage.setItem("refreshToken", response.refreshToken);
+        sessionStorage.setItem("apiKey", response.apiKey);
+
+        // Store user info
+        sessionStorage.setItem("user", JSON.stringify(response.user));
+      }
+
+      return response;
+    } catch (error) {
+      console.error("Authentication error:", error);
+      throw error;
+    }
+  };
+
+  return {
+    apiCall,
+    authenticate,
+    isLoading,
+    error,
+  };
 };
 
 export default useApi;

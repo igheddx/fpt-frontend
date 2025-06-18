@@ -8,6 +8,7 @@ import {
   TagOutlined,
   CheckCircleOutlined,
   BarChartOutlined,
+  AuditOutlined,
 } from "@ant-design/icons";
 import {
   BarChart,
@@ -21,6 +22,7 @@ import {
 import { useDarkMode } from "../config/DarkModeContext";
 import { useAccountContext } from "../contexts/AccountContext";
 import { RoleBasedContent } from "../components/RoleBasedContent";
+import { useApi } from "../hooks/useApi";
 
 const Dashboard = () => {
   const [selectedCard, setSelectedCard] = useState(null);
@@ -33,6 +35,7 @@ const Dashboard = () => {
   const { darkMode } = useDarkMode();
   const { accountContext, currentRole } = useAccountContext();
   const tableRef = useRef(null);
+  const { apiCall } = useApi();
 
   const orgs = [
     { name: "Org A", cloudAccounts: ["AWS-001", "GCP-002"] },
@@ -98,14 +101,21 @@ const Dashboard = () => {
       }
 
       try {
-        const response = await fetch(
-          `http://localhost:5000/api/Metrics?customerId=${accountContext.customerId}&accountId=${accountContext.accountId}`
-        );
-        if (!response.ok) {
-          throw new Error("Failed to fetch metrics");
-        }
-        const data = await response.json();
-        setMetrics(data);
+        const response = await apiCall({
+          method: "get",
+          url: `/api/Metrics?customerId=${accountContext.customerId}&accountId=${accountContext.accountId}`,
+        });
+
+        // const response = await fetch(
+        //   `http://localhost:5000/api/Metrics?customerId=${accountContext.customerId}&accountId=${accountContext.accountId}`
+        // );
+
+        console.log("Dashboard - API Response:", response);
+        // if (!response.ok) {
+        //   throw new Error("Failed to fetch metrics");
+        // }
+        //const data = await response.json();
+        setMetrics(response);
       } catch (error) {
         console.error("Error fetching metrics:", error);
       }
@@ -188,6 +198,11 @@ const Dashboard = () => {
     borderRadius: 12,
     textAlign: "center",
     fontSize: 16,
+    borderColor: darkMode ? "#424242" : undefined,
+    background: darkMode ? "#1e1e1e" : undefined,
+    ".ant-card-head": {
+      borderBottom: darkMode ? "1px solid #2d2d2d" : undefined,
+    },
   };
 
   const renderCards = () => {
@@ -197,6 +212,10 @@ const Dashboard = () => {
         <Col span={8}>
           <Card
             style={cardStyle}
+            className={darkMode ? "dark-mode-card" : ""}
+            headStyle={{
+              borderBottom: darkMode ? "1px solid #2d2d2d" : undefined,
+            }}
             title={
               <DatabaseOutlined
                 style={{
@@ -221,6 +240,10 @@ const Dashboard = () => {
         <Col span={8}>
           <Card
             style={cardStyle}
+            className={darkMode ? "dark-mode-card" : ""}
+            headStyle={{
+              borderBottom: darkMode ? "1px solid #2d2d2d" : undefined,
+            }}
             title={
               <TagOutlined
                 style={{
@@ -244,8 +267,12 @@ const Dashboard = () => {
         <Col span={8}>
           <Card
             style={cardStyle}
+            className={darkMode ? "dark-mode-card" : ""}
+            headStyle={{
+              borderBottom: darkMode ? "1px solid #2d2d2d" : undefined,
+            }}
             title={
-              <BarChartOutlined
+              <AuditOutlined
                 style={{
                   color: darkMode ? "#fff" : "#fff",
                   backgroundColor: "rgba(153, 105, 199, 1)",

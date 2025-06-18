@@ -68,3 +68,43 @@ input:-webkit-autofill {
 .steps-action {
   margin-top: 24px;
 }
+
+/* Dark mode alert styles */
+.dark-mode-alert .ant-alert-message,
+.dark-mode-alert .ant-alert-description {
+  color: #fff !important;
+}
+
+.dark-mode-alert .ant-alert-icon {
+  color: #fff !important;
+}
+
+.dark-mode-alert.ant-alert-info .ant-alert-icon {
+  color: #1890ff !important;
+}
+
+.dark-mode-alert.ant-alert-error .ant-alert-icon {
+  color: #ff4d4f !important;
+}
+
+/* Dark mode styles for AutoComplete dropdown */
+.dark-mode-dropdown.ant-select-dropdown {
+  background-color: #1f1f1f !important;
+}
+
+.dark-mode-dropdown .ant-select-item {
+  background-color: #1f1f1f !important;
+  color: #fff !important;
+}
+
+.dark-mode-dropdown .ant-select-item-option-active {
+  background-color: #2a2a2a !important;
+}
+
+.dark-mode-dropdown .ant-select-item-option-selected {
+  background-color: #177ddc !important;
+}
+
+.dark-mode-dropdown .ant-empty-description {
+  color: #fff !important;
+}

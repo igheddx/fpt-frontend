@@ -17,6 +17,7 @@ import {
   ConfigProvider,
   Table,
   Divider,
+  Button,
 } from "antd";
 import {
   BellOutlined,
@@ -25,6 +26,7 @@ import {
   MoonOutlined,
   SettingOutlined,
   LogoutOutlined,
+  SearchOutlined,
 } from "@ant-design/icons";
 import Dashboard from "./Dashboard";
 import Admin from "./Admin";
@@ -39,9 +41,12 @@ import ForgotPassword from "../authenticate/forgetPassword";
 import "../index.css";
 import { useDarkMode } from "../config/DarkModeContext"; // Import the provider
 import { render } from "@testing-library/react";
-import { setGlobalState, useGlobalState } from "../state/index";
+import { useGlobalState, setGlobalState } from "../state";
 import axiosInstance from "../hooks/axiosInstance";
 import ReusableSearch from "../components/ReuseableSearch";
+import { useApi } from "../hooks/useApi";
+import { useNotification } from "../context/NotificationContext";
+import { useNotifications } from "../hooks/useNotifications";
 
 const { Header, Content, Footer } = Layout;
 const { Search } = Input;
@@ -61,66 +66,33 @@ const AppHeader = () => {
   const [settingsOpen, setSettingsOpen] = useState(false); // Settings drawer state
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
+  const { unreadCount } = useNotification();
+  const { notifications, loading, markAsViewed } = useNotifications();
 
+  const [searchQuery, setSearchQuery] = useState("");
   const [searchResults1, setSearchResults1] = useState([]);
-  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [selectedData, setSelectedData] = useState(null);
   const [suggestions, setSuggestions] = useState([]);
+  const [hideSuggestionDiv, setHideSuggestionDiv] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchTimeout, setSearchTimeout] = useState(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [searchValue, setSearchValue] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const { darkMode, toggleTheme } = useDarkMode();
+  const { apiCall } = useApi();
+  const inputRef = useRef(null); // Ref for input field
+  const suggestionsRef = useRef(null);
+
   const showDrawer = () => setOpen(true);
   const closeDrawer = () => setOpen(false);
   const showSettingsDrawer = () => setSettingsOpen(true);
   const closeSettingsDrawer = () => setSettingsOpen(false);
-  const [searchResults, setSearchResults] = useState([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedData, setSelectedData] = useState(null);
-  const [hideSuggestionDiv, setHideSuggestionDiv] = useState(false);
-  const inputRef = useRef(null); // Ref for input field
-  const suggestionsRef = useRef(null);
-
-  const { darkMode, toggleTheme } = useDarkMode(); // ✅ use global context instead of local state
-
-  // useEffect(() => {
-  //   if (searchQuery.length > 2) {
-  //     fetchSuggestions();
-  //   } else {
-  //     setSuggestions([]);
-  //   }
-  // }, [searchQuery]);
-
-  // Side effect to control body overflow
-  // useEffect(() => {
-  //   if (open || settingsOpen) {
-  //     document.body.style.overflow = "hidden"; // Disable scrolling when drawers are open
-  //   } else {
-  //     document.body.style.overflow = "auto"; // Enable scrolling when drawers are closed
-  //   }
-
-  //   return () => {
-  //     document.body.style.overflow = "auto"; // Clean up when component unmounts
-  //   };
-  // }, [open, settingsOpen]);
 
   const handleSearchChange = (e) => {
     const newValue = e.target.value;
     setSearchQuery(newValue);
   };
-
-  // Close suggestions when clicking outside
-  // useEffect(() => {
-  //   const handleClickAway = (event) => {
-  //     if (
-  //       inputRef.current?.input &&       !inputRef.current?.input.contains(event.target) &&
-  //       suggestionsRef.current &&!suggestionsRef.current.contains(event.target)
-  //     ) {
-  //       setSuggestions([]);
-  //     }
-  //   };
-
-  //   setHideSuggestionDiv(true);
-  //   document.addEventListener("mousedown", handleClickAway); // Listen for clicks outside
-  //   return () => {
-  //     document.removeEventListener("mousedown", handleClickAway); // Cleanup on unmount
-  //   };
-  // }, [suggestionsRef]);
 
   const fetchSearchDataOld = async (query) => {
     try {
@@ -136,50 +108,22 @@ const AppHeader = () => {
     }
   };
 
-  // Remove automatic navigation effects - only navigate on explicit user actions
-  // useEffect(() => {
-  //   // Only navigate if selectedData exists and is not null/undefined
-  //   if (selectedData && Object.keys(selectedData).length > 0) {
-  //     console.log("ENDING Selected data changed:", JSON.stringify(selectedData));
-  //     navigate("/search", { state: [selectedData], key: Date.now().toString() });
-  //   }
-  // }, [selectedData]);
-
-  // useEffect(() => {
-  //   // Only navigate if searchResults1 has actual results
-  //   if (searchResults1 && searchResults1.length > 0) {
-  //     console.log("ENDING Selected data changed:", JSON.stringify(searchResults1));
-  //     navigate("/search", {
-  //       state: searchResults1,
-  //       key: Date.now().toString(),
-  //     });
-  //   }
-  // }, [searchResults1]);
-
-  // useEffect(() => {
-  //   // Only navigate if searchQuery is not empty and user actually searched
-  //   if (searchQuery && searchQuery.trim().length > 0) {
-  //     navigate("/search", { state: { query: searchQuery } });
-  //   }
-  // }, [searchQuery]);
-
   const fetchData = async (query) => {
     setSuggestions([]);
     setHideSuggestionDiv(false);
     console.log("@@QUERY@@==", query);
 
     try {
-      // Use GET request to the new resource search endpoint
-      const response = await axiosInstance.get("/api/resource/search", {
-        params: {
-          q: query,
-        },
+      const response = await apiCall({
+        method: "GET",
+        url: "/api/resource/search",
+        params: { q: query },
       });
 
-      console.log("Full Resource Search Response:", response?.data);
+      console.log("Full Resource Search Response:", response);
 
       // The API returns an array of resources
-      const resources = response?.data || [];
+      const resources = response || [];
       console.log("Resource Table Results:", resources);
       console.log("Number of Resource Table Results:", resources.length);
 
@@ -206,28 +150,12 @@ const AppHeader = () => {
             suggestionMatchResults.slice(0, 10)
           );
           return suggestionMatchResults.slice(0, 10); // Limit to 10 results
-        } else {
-          console.log("no record found after filtering");
-          return [];
         }
-      } else {
-        console.log("No resources found or resources is not an array");
-        return [];
       }
+
+      return [];
     } catch (error) {
-      console.error("Error fetching suggestions:", error);
-
-      // Log Axios error details
-      if (error.response) {
-        console.error("Response data:", error.response.data);
-        console.error("Response status:", error.response.status);
-        console.error("Response headers:", error.response.headers);
-      } else if (error.request) {
-        console.error("No response received:", error.request);
-      } else {
-        console.error("Error setting up request:", error.message);
-      }
-
+      console.error("Error searching resources:", error);
       return [];
     }
   };
@@ -255,42 +183,37 @@ const AppHeader = () => {
   };
 
   const handleSelectStudent = (student) => {
-    setSelectedStudent(student);
+    setSelectedData(student);
     const searchTerm = "example"; // The data you want to pass
     navigate("/search", { state: [student] });
     //navigate("/search");
     setSearchResults([]);
   };
 
-  // const toggleTheme = () => {
-  //   setDarkMode(!darkMode);
-  // };
-
   const handleLogout = () => {
     console.log("logout was called");
-    setSettingsOpen(false);
+
+    // First clear all session storage items
+    sessionStorage.clear(); // This will clear everything including token and apiKey
+
+    // Then update the global state
     setGlobalState("isAuthenticated", false);
-    //setGlobalState("isAuthenticated", false);
-    /*clear sessions*/
-    sessionStorage.removeItem("profileData");
-    sessionStorage.removeItem("xapikey");
-    sessionStorage.removeItem("xapikeyNoAccessToken");
-    sessionStorage.removeItem("cloudAccountData");
-    sessionStorage.removeItem("profileId");
-    sessionStorage.removeItem("roleData");
-    sessionStorage.removeItem("accessToken");
-    sessionStorage.removeItem("refreshToken");
+    setGlobalState("user", {});
+    setGlobalState("token", null);
+    setGlobalState("apiKey", null);
 
-    // Clear account context from session storage
-    sessionStorage.removeItem("accountContext");
+    // Close any open drawers
+    setSettingsOpen(false);
 
-    navigate("/");
+    // Navigate to login page
+    navigate("/login");
   };
 
-  const notifications = [
-    { title: "New Message", description: "You have received a new message" },
-    { title: "System Alert", description: "Scheduled maintenance at 10 PM" },
-  ];
+  const handleNotificationClick = async (notification) => {
+    if (!notification.isViewed) {
+      await markAsViewed(notification.id);
+    }
+  };
 
   // Use the context version instead
   const items = getContextNavigationItems();
@@ -302,9 +225,11 @@ const AppHeader = () => {
   return (
     <ConfigProvider
       theme={{
-        token: {
-          colorBgContainer: darkMode ? "#1e1e1e" : "#ffffff",
-          colorTextBase: darkMode ? "#fff" : "#000",
+        components: {
+          Layout: {
+            headerBg: darkMode ? "#001529" : "#001529",
+            headerColor: "#fff",
+          },
         },
       }}
     >
@@ -326,10 +251,25 @@ const AppHeader = () => {
             boxSizing: "border-box", // Prevent any border/padding issues
           }}
         >
-          <img src={logo} alt="Logo" style={{ height: 40, marginRight: 64 }} />
-          {console.log("isAuthenticated==", JSON.stringify(selectedData))}
+          <img
+            src={logo}
+            alt="Logo"
+            style={{ height: 135, width: "auto", marginRight: 24 }}
+          />
           {isAuthenticated ? (
             <>
+              <Button
+                icon={<SearchOutlined style={{ fontSize: "20px" }} />}
+                type="text"
+                style={{
+                  color: "#fff",
+                  marginRight: 20,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+                onClick={() => navigate("/advanced-search")}
+              />
               <div style={{ position: "relative" }}>
                 {/* <Search
                   placeholder="Search..."
@@ -339,7 +279,7 @@ const AppHeader = () => {
                   value={searchQuery}
                 /> */}
 
-                <ReusableSearch
+                {/* <ReusableSearch
                   fetchData={fetchData}
                   queryString={(qry) => setSearchQuery(qry)}
                   onSelect={(data) => {
@@ -361,7 +301,7 @@ const AppHeader = () => {
                     height: "40px", // Match large size height
                     borderRadius: "8px",
                   }}
-                />
+                /> */}
 
                 {/* {suggestions.map((item) => item.arn)} */}
 
@@ -450,7 +390,7 @@ const AppHeader = () => {
                 onClick={({ key }) => navigate(key)}
                 style={{ flex: 1, minWidth: 0, background: "transparent" }}
               />
-              <Badge count={notifications.length} style={{ marginRight: 20 }}>
+              <Badge count={unreadCount} style={{ marginRight: 20 }}>
                 <BellOutlined
                   style={{ fontSize: 24, color: "#fff", cursor: "pointer" }}
                   onClick={showDrawer}
@@ -462,7 +402,12 @@ const AppHeader = () => {
                 onClick={() => navigate("/profile")}
               />
               <SettingOutlined
-                style={{ fontSize: 24, color: "#fff", cursor: "pointer" }}
+                style={{
+                  fontSize: 24,
+                  color: "#fff",
+                  cursor: "pointer",
+                  marginLeft: 20,
+                }}
                 onClick={showSettingsDrawer}
               />
             </>
@@ -476,18 +421,78 @@ const AppHeader = () => {
           placement="right"
           onClose={closeDrawer}
           open={open}
-          style={{ background: darkMode ? "#001529" : "#ffffff", zIndex: 2000 }}
+          style={{
+            background: darkMode ? "#000000" : "#ffffff",
+            zIndex: 2000,
+          }}
+          styles={{
+            header: {
+              background: darkMode ? "#000000" : "#ffffff",
+              color: darkMode ? "#ffffff" : "#000000",
+              borderBottom: darkMode ? "1px solid #333" : "1px solid #f0f0f0",
+            },
+            body: {
+              background: darkMode ? "#000000" : "#ffffff",
+              color: darkMode ? "#ffffff" : "#000000",
+            },
+            content: {
+              background: darkMode ? "#000000" : "#ffffff",
+            },
+            wrapper: {
+              background: darkMode ? "#000000" : "#ffffff",
+            },
+          }}
         >
           <List
+            loading={loading}
             dataSource={notifications}
             renderItem={(item) => (
-              <List.Item>
+              <List.Item
+                onClick={() => handleNotificationClick(item)}
+                style={{
+                  cursor: "pointer",
+                  backgroundColor: !item.isViewed
+                    ? darkMode
+                      ? "#1a1a1a"
+                      : "#f0f5ff"
+                    : "transparent",
+                  color: darkMode ? "#ffffff" : "#000000",
+                  borderBottom: darkMode
+                    ? "1px solid #333"
+                    : "1px solid #f0f0f0",
+                }}
+              >
                 <List.Item.Meta
-                  title={item.title}
-                  description={item.description}
+                  title={
+                    <span style={{ color: darkMode ? "#ffffff" : "#000000" }}>
+                      {item.type}
+                    </span>
+                  }
+                  description={
+                    <>
+                      <div style={{ color: darkMode ? "#cccccc" : "#666666" }}>
+                        {item.message}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          color: darkMode ? "#888888" : "#666666",
+                        }}
+                      >
+                        {new Date(item.createDateTime).toLocaleString()}
+                      </div>
+                    </>
+                  }
                 />
               </List.Item>
             )}
+            locale={{
+              emptyText: (
+                <span style={{ color: darkMode ? "#888888" : "#666666" }}>
+                  No notifications
+                </span>
+              ),
+            }}
           />
         </Drawer>
 
@@ -496,26 +501,61 @@ const AppHeader = () => {
           placement="right"
           onClose={closeSettingsDrawer}
           open={settingsOpen}
-          style={{ background: darkMode ? "#001529" : "#ffffff", zIndex: 2000 }}
+          style={{
+            background: darkMode ? "#000000" : "#ffffff",
+            zIndex: 2000,
+          }}
+          styles={{
+            header: {
+              background: darkMode ? "#000000" : "#ffffff",
+              color: darkMode ? "#ffffff" : "#000000",
+              borderBottom: darkMode ? "1px solid #333" : "1px solid #f0f0f0",
+            },
+            body: {
+              background: darkMode ? "#000000" : "#ffffff",
+              color: darkMode ? "#ffffff" : "#000000",
+            },
+            content: {
+              background: darkMode ? "#000000" : "#ffffff",
+            },
+            wrapper: {
+              background: darkMode ? "#000000" : "#ffffff",
+            },
+          }}
         >
           <List>
             <List.Item
               onClick={toggleTheme}
-              style={{ cursor: "pointer", color: darkMode ? "#fff" : "#000" }}
+              style={{
+                cursor: "pointer",
+                color: darkMode ? "#ffffff" : "#000000",
+                borderBottom: darkMode ? "1px solid #333" : "1px solid #f0f0f0",
+              }}
             >
               {darkMode ? (
-                <SunOutlined style={{ color: "#fff" }} />
+                <SunOutlined style={{ color: "#ffffff", marginRight: "8px" }} />
               ) : (
-                <MoonOutlined style={{ color: "#000" }} />
-              )}{" "}
+                <MoonOutlined
+                  style={{ color: "#000000", marginRight: "8px" }}
+                />
+              )}
               Toggle Dark Mode
             </List.Item>
 
             <List.Item
               onClick={handleLogout}
-              style={{ cursor: "pointer", color: darkMode ? "#fff" : "#000" }}
+              style={{
+                cursor: "pointer",
+                color: darkMode ? "#ffffff" : "#000000",
+                borderBottom: darkMode ? "1px solid #333" : "1px solid #f0f0f0",
+              }}
             >
-              <LogoutOutlined style={{ color: darkMode ? "#fff" : "#000" }} />{" "}
+              <LogoutOutlined
+                style={{
+                  color: darkMode ? "#ffffff" : "#000000",
+                  marginRight: "8px",
+                }}
+              />
               Logout
             </List.Item>
           </List>

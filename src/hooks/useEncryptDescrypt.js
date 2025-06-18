@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import CryptoJS from "crypto-js";
+
 const useEncryptDecrypt = () => {
   const [data, setData] = useState("");
+
   const getEncryptDecryptWithUserName = async (username) => {
     let data2 = "";
     data2 = username + "|8216EB35-BB77-49AD-94CA-A7C3520DC464";
@@ -20,10 +22,10 @@ const useEncryptDecrypt = () => {
     const final = enc.ciphertext.toString(CryptoJS.enc.Base64);
 
     sessionStorage.setItem("xapikey", final);
+    localStorage.setItem("xapikey", final);
 
     setData(final);
   };
-  // return {data, };
 
   const getEncryptDecryptNoUserName = async () => {
     let data2 = "";
@@ -44,10 +46,12 @@ const useEncryptDecrypt = () => {
     const final = enc.ciphertext.toString(CryptoJS.enc.Base64);
 
     sessionStorage.setItem("xapikeyNoAccessToken", final);
+    localStorage.setItem("xapikeyNoAccessToken", final);
 
-    //console.log("dominic inside encrypt", final);
+    console.log("Generated API key:", final);
     setData(final);
   };
+
   return { data, getEncryptDecryptNoUserName, getEncryptDecryptWithUserName };
 };
 

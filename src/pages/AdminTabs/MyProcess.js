@@ -3,7 +3,8 @@ import { Table, Button, Input, Modal, Alert, Space, message } from "antd";
 import { PlusOutlined, MinusOutlined, SearchOutlined } from "@ant-design/icons";
 import { useDarkMode } from "../../config/DarkModeContext";
 import styles from "../../App.css";
-import useApi from "../../hooks/useApi";
+import { useApi } from "../../hooks/useApi";
+import { useAccountContext } from "../../contexts/AccountContext";
 
 const initialPolicies = [
   {
@@ -53,7 +54,8 @@ const MyProcess = () => {
   const [selectedFlow, setSelectedFlow] = useState(null);
   const { darkMode } = useDarkMode();
   const suggestionBoxRef = useRef(null);
-  const apiCall = useApi();
+  const { apiCall } = useApi();
+  const { accountContext, addPolicyRefreshListener } = useAccountContext();
   const [participantsData, setParticipantsData] = useState({});
   const [resourcesData, setResourcesData] = useState({});
 
@@ -66,24 +68,21 @@ const MyProcess = () => {
       let response;
       if (userAccessLevel === "admin" || userAccessLevel === "root") {
         response = await apiCall({
-          method: "get",
+          method: "GET",
           url: `/api/ApprovalFlow?createdById=${profileId}`,
         });
-
-        console.log("### response===", JSON.stringify(response));
       } else {
         response = await apiCall({
-          method: "get",
+          method: "GET",
           url: "/api/ApprovalFlow?status=Submitted",
         });
       }
-      console.log("🔍 [MyProcess] Approval flows response:", response);
 
       // Fetch participants and resources for each approval flow
       const flowsWithDetails = await Promise.all(
         response.map(async (flow) => {
           const participantsResponse = await apiCall({
-            method: "get",
+            method: "GET",
             url: `/api/ApprovalFlowParticipant?approvalId=${flow.id}`,
           });
           const filteredParticipants = (participantsResponse || []).filter(
@@ -91,7 +90,7 @@ const MyProcess = () => {
           );
 
           const resourcesResponse = await apiCall({
-            method: "get",
+            method: "GET",
             url: `/api/Resource/search?approvalId=${flow.id}`,
           });
           const filteredResources = (resourcesResponse || []).filter(

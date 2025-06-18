@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useDarkMode } from "../../config/DarkModeContext";
 import { useAccountContext } from "../../contexts/AccountContext";
-import useApi from "../../hooks/useApi";
+import { useApi } from "../../hooks/useApi";
 import {
   Table,
   Input,
@@ -27,7 +27,7 @@ const MySubmissions = () => {
   const [showSuccessAlert, setShowSuccessAlert] = useState(false);
   const { darkMode } = useDarkMode();
   const { accountContext, addPolicyRefreshListener } = useAccountContext();
-  const apiCall = useApi();
+  const { apiCall } = useApi();
 
   // Policy-related state
   const [policies, setPolicies] = useState([]);
@@ -66,7 +66,7 @@ const MySubmissions = () => {
       });
 
       const response = await apiCall({
-        method: "get",
+        method: "GET",
         url: "/api/Policy",
       });
 
@@ -117,25 +117,17 @@ const MySubmissions = () => {
     // fetchAllAccountsData(); // Removed - now using global AccountContext
   }, []);
 
-  // Load policies when account context changes
+  // Fetch policies when account context changes
   useEffect(() => {
     if (accountContext) {
       fetchPolicies();
     }
   }, [accountContext]);
 
-  // Subscribe to policy refresh events
+  // Add policy refresh listener
   useEffect(() => {
     if (addPolicyRefreshListener) {
-      console.log("🔔 [MySubmissions] Subscribing to policy refresh events");
-      const unsubscribe = addPolicyRefreshListener(() => {
-        console.log(
-          "🔄 [MySubmissions] Received policy refresh event, refetching policies"
-        );
-        fetchPolicies();
-      });
-
-      return unsubscribe;
+      addPolicyRefreshListener(fetchPolicies);
     }
   }, [addPolicyRefreshListener]);
 
@@ -222,7 +214,7 @@ const MySubmissions = () => {
       }
 
       const response = await apiCall({
-        method: "get",
+        method: "GET",
         url: `/api/Profile/search-approvers?${params.toString()}`,
       });
 
@@ -503,7 +495,8 @@ const MySubmissions = () => {
       console.log("ApprovalFlow created with ID:", approvalFlowId);
 
       // Step 2: Create ApprovalFlowParticipant records for each approver
-      const participantPromises = selectedApprovers.map(async (approver) => {
+      // Process one participant at a time to ensure emails are sent
+      for (const approver of selectedApprovers) {
         const participantData = {
           approvalId: approvalFlowId,
           profileId: approver.profileId,
@@ -515,18 +508,35 @@ const MySubmissions = () => {
           participantData
         );
 
-        return await apiCall({
-          method: "post",
-          url: "/api/ApprovalFlowParticipant",
-          data: participantData,
-        });
-      });
+        try {
+          // Create participant and wait for it to complete
+          const participant = await apiCall({
+            method: "post",
+            url: "/api/ApprovalFlowParticipant",
+            data: participantData,
+          });
 
-      const participantResults = await Promise.all(participantPromises);
-      console.log(
-        "ApprovalFlowParticipant records created:",
-        participantResults
-      );
+          console.log("Participant created:", participant);
+
+          // Create notification for this approver
+          await apiCall({
+            method: "POST",
+            url: "/api/Notification",
+            data: {
+              profileId: approver.profileId,
+              generalId: approvalFlowResponse.id,
+              type: "approvalFlow",
+              message:
+                "You are an approver in a new approval flow. Please review and approve/reject",
+            },
+          });
+
+          console.log("Notification created for approver:", approver.profileId);
+        } catch (error) {
+          console.error("Error creating participant or notification:", error);
+          // Continue with other approvers even if one fails
+        }
+      }
 
       // Step 3: Create ApprovalFlowLog records for each resource
       const logPromises = selectedResources.map(async (resource) => {
@@ -551,8 +561,31 @@ const MySubmissions = () => {
       const logResults = await Promise.all(logPromises);
       console.log("ApprovalFlowLog records created:", logResults);
 
-      // Success - close loading message and show success
+      // After successful creation of approval flow, participants, and resources
+      // Create notifications for each approver
+      for (const approver of selectedApprovers) {
+        try {
+          await apiCall({
+            method: "POST",
+            url: "/api/Notification",
+            data: {
+              profileId: approver.profileId,
+              generalId: approvalFlowResponse.id, // The ID from the created approval flow
+              type: "approvalFlow",
+              message:
+                "You are an approver in a new approval flow. Please review and approve/reject",
+            },
+          });
+        } catch (error) {
+          console.error("Error creating notification for approver:", error);
+          // Don't throw error here, continue with other approvers
+        }
+      }
+
+      // Close loading message
       loadingMessage();
+
+      // Show success message
       message.success(
         `Approval request submitted successfully! ${selectedResources.length} resources sent to ${selectedApprovers.length} approvers.`
       );

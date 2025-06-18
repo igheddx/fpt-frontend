@@ -17,8 +17,8 @@ import {
 } from "@ant-design/icons";
 import { useDarkMode } from "../config/DarkModeContext";
 import { useAccountContext } from "../contexts/AccountContext";
-import useApi from "../hooks/useApi";
-import RoleBasedContent from "../components/RoleBasedContent";
+import { useApi } from "../hooks/useApi";
+import { RoleBasedContent } from "../components/RoleBasedContent";
 
 const { TextArea } = Input;
 const { Link } = Typography;
@@ -33,7 +33,10 @@ const Review = () => {
   const [showConfirmation, setShowConfirmation] = useState(false);
   const { darkMode } = useDarkMode();
   const { accountContext } = useAccountContext();
-  const apiCall = useApi();
+  const { apiCall } = useApi();
+
+  // Check if user has approver role
+  const isApprover = accountContext?.permissions?.toLowerCase() === "approver";
 
   // New state for approval flows and rejection modal
   const [approvalFlows, setApprovalFlows] = useState([]);
@@ -84,36 +87,22 @@ const Review = () => {
       );
 
       const response = await apiCall({
-        method: "get",
+        method: "GET",
         url: `/api/ApprovalFlow/approver/${profileId}`,
       });
 
       console.log("🔍 [Review] Approval flows response:", response);
 
       if (response && Array.isArray(response)) {
-        // Always store all flows for search functionality
+        // Store all flows
         setApprovalFlows(response);
 
-        if (!isSearching) {
-          // DEFAULT VIEW: Show only pending approvals automatically on page load
-          const pendingFlows = response.filter((flow) => {
-            // Check the current user's status using ApproverStatus field
-            return flow.approverStatus?.toLowerCase() === "pending";
-          });
-          console.log(
-            "🔍 [Review] Showing pending approvals on page load:",
-            pendingFlows.length,
-            "out of",
-            response.length
-          );
-          console.log(
-            "🔍 [Review] Sample flow data for debugging:",
-            response[0]
+        // Only update filtered policies if not actively searching
+        if (!searchTerm.trim()) {
+          const pendingFlows = response.filter(
+            (flow) => flow.approverStatus?.toLowerCase() === "pending"
           );
           setFilteredPolicies(pendingFlows);
-        } else {
-          // SEARCH VIEW: This will be handled by search functions independently
-          // Don't modify filteredPolicies here when searching
         }
       } else {
         console.log("🔍 [Review] No approval flows found");
@@ -128,20 +117,15 @@ const Review = () => {
     } finally {
       setLoading(false);
     }
-  }, [apiCall, isSearching]);
+  }, [apiCall, searchTerm]);
   const suggestionBoxRef = useRef(null);
 
-  // Load approval flows on component mount
+  // Load approval flows on component mount and account context changes
   useEffect(() => {
-    fetchApprovalFlows();
-  }, [fetchApprovalFlows]);
-
-  // Refresh approval flows when account context changes
-  useEffect(() => {
-    if (accountContext) {
+    if (accountContext && isApprover) {
       fetchApprovalFlows();
     }
-  }, [accountContext, fetchApprovalFlows]);
+  }, [accountContext, isApprover]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -162,20 +146,31 @@ const Review = () => {
     const value = e.target.value;
     setSearchTerm(value);
     setShowConfirmation(false);
-    setFilteredPolicies([]);
 
-    // Update search state
-    setIsSearching(value.trim().length > 0);
+    // Clear results if search is cleared
+    if (!value.trim()) {
+      const pendingFlows = approvalFlows.filter(
+        (flow) => flow.approverStatus?.toLowerCase() === "pending"
+      );
+      setFilteredPolicies(pendingFlows);
+      setSuggestions([]);
+      return;
+    }
 
-    const lowerVal = value.toLowerCase();
-    const matches = approvalFlows.filter(
-      (flow) =>
-        flow.approvalId?.toString().toLowerCase().includes(lowerVal) ||
-        flow.name?.toLowerCase().includes(lowerVal) ||
-        flow.type?.toLowerCase().includes(lowerVal) ||
-        flow.status?.toLowerCase().includes(lowerVal)
-    );
-    setSuggestions(matches);
+    // Perform search if we have at least 1 character
+    if (value.trim().length > 0) {
+      const lowerVal = value.toLowerCase();
+      const matches = approvalFlows.filter(
+        (flow) =>
+          flow.approvalId?.toString().toLowerCase().includes(lowerVal) ||
+          flow.name?.toLowerCase().includes(lowerVal) ||
+          flow.type?.toLowerCase().includes(lowerVal) ||
+          flow.status?.toLowerCase().includes(lowerVal)
+      );
+      setSuggestions(matches);
+    } else {
+      setSuggestions([]);
+    }
   };
 
   const handleSuggestionClick = (flow) => {
@@ -317,6 +312,124 @@ const Review = () => {
         console.log("🔍 [Review] Updated approval flow status to ready");
       }
 
+      // Step 6: Send notifications and emails
+      try {
+        // Get all participants and submitter info
+        const allParticipants = await apiCall({
+          method: "get",
+          url: `/api/ApprovalFlowParticipant?approvalId=${selectedApprovalFlow.approvalId}`,
+        });
+
+        const approvalFlow = await apiCall({
+          method: "get",
+          url: `/api/ApprovalFlow/${selectedApprovalFlow.approvalId}`,
+        });
+
+        // Get submitter's profile
+        const submitterProfile = await apiCall({
+          method: "get",
+          url: `/api/Profile/${approvalFlow.createdById}`,
+        });
+
+        // Get current approver's name
+        const currentApproverProfile = await apiCall({
+          method: "get",
+          url: `/api/Profile/${profileId}`,
+        });
+
+        const approverName = `${currentApproverProfile.firstName} ${currentApproverProfile.lastName}`;
+
+        // Send notifications to other participants
+        for (const participant of allParticipants) {
+          // Skip the current approver
+          if (participant.profileId === profileId) continue;
+
+          // Create notification record
+          await apiCall({
+            method: "POST",
+            url: "/api/Notification",
+            data: {
+              profileId: participant.profileId,
+              generalId: selectedApprovalFlow.approvalId,
+              type: "approvalFlow",
+              message: `${approverName} has approved the approval flow "${selectedApprovalFlow.name}"`,
+              isViewed: false,
+            },
+          });
+
+          // Send email
+          await apiCall({
+            method: "POST",
+            url: "/api/Email/send",
+            data: {
+              to: participant.participantEmail,
+              subject: `Approval Update: ${selectedApprovalFlow.name}`,
+              body: `${approverName} has approved the approval flow "${
+                selectedApprovalFlow.name
+              }".${approvalComment ? `\n\nComment: ${approvalComment}` : ""}`,
+            },
+          });
+        }
+
+        // If this was the final approval, send additional notification to submitter
+        if (allApproved) {
+          // Create notification for submitter
+          await apiCall({
+            method: "POST",
+            url: "/api/Notification",
+            data: {
+              profileId: approvalFlow.createdById,
+              generalId: selectedApprovalFlow.approvalId,
+              type: "approvalFlow",
+              message: `Your approval flow "${selectedApprovalFlow.name}" has been completed with status: Ready`,
+              isViewed: false,
+            },
+          });
+
+          // Send completion email to submitter
+          await apiCall({
+            method: "POST",
+            url: "/api/Email/send",
+            data: {
+              to: submitterProfile.email,
+              subject: `Approval Flow Completed: ${selectedApprovalFlow.name}`,
+              body: `Your approval flow "${selectedApprovalFlow.name}" has been completed and is now Ready for implementation.\n\nAll approvers have approved the request.`,
+            },
+          });
+        } else {
+          // If not final approval, still notify submitter of this approval
+          await apiCall({
+            method: "POST",
+            url: "/api/Notification",
+            data: {
+              profileId: approvalFlow.createdById,
+              generalId: selectedApprovalFlow.approvalId,
+              type: "approvalFlow",
+              message: `${approverName} has approved your approval flow "${selectedApprovalFlow.name}"`,
+              isViewed: false,
+            },
+          });
+
+          // Send progress email to submitter
+          await apiCall({
+            method: "POST",
+            url: "/api/Email/send",
+            data: {
+              to: submitterProfile.email,
+              subject: `Approval Progress: ${selectedApprovalFlow.name}`,
+              body: `${approverName} has approved your approval flow "${
+                selectedApprovalFlow.name
+              }".${
+                approvalComment ? `\n\nComment: ${approvalComment}` : ""
+              }\n\nThe approval flow is still pending other approvers.`,
+            },
+          });
+        }
+      } catch (error) {
+        console.error("Error sending notifications:", error);
+        // Don't throw error here, as the main approval process was successful
+      }
+
       // Close loading message
       loadingMessage();
 
@@ -429,6 +542,91 @@ const Review = () => {
 
       console.log("🔍 [Review] Rejection response:", response);
 
+      // Add notification and email functionality
+      try {
+        // Get all participants and submitter info
+        const allParticipants = await apiCall({
+          method: "get",
+          url: `/api/ApprovalFlowParticipant?approvalId=${selectedApprovalFlow.approvalId}`,
+        });
+
+        const approvalFlow = await apiCall({
+          method: "get",
+          url: `/api/ApprovalFlow/${selectedApprovalFlow.approvalId}`,
+        });
+
+        // Get submitter's profile
+        const submitterProfile = await apiCall({
+          method: "get",
+          url: `/api/Profile/${approvalFlow.createdById}`,
+        });
+
+        // Get current approver's name
+        const currentApproverProfile = await apiCall({
+          method: "get",
+          url: `/api/Profile/${profileId}`,
+        });
+
+        const approverName = `${currentApproverProfile.firstName} ${currentApproverProfile.lastName}`;
+
+        // Send notifications to other participants
+        for (const participant of allParticipants) {
+          // Skip the current approver
+          if (participant.profileId === profileId) continue;
+
+          // Create notification record
+          await apiCall({
+            method: "POST",
+            url: "/api/Notification",
+            data: {
+              profileId: participant.profileId,
+              generalId: selectedApprovalFlow.approvalId,
+              type: "approvalFlow",
+              message: `${approverName} has rejected the approval flow "${selectedApprovalFlow.name}"`,
+              isViewed: false,
+            },
+          });
+
+          // Send email
+          await apiCall({
+            method: "POST",
+            url: "/api/Email/send",
+            data: {
+              to: participant.participantEmail,
+              subject: `Approval Flow Rejected: ${selectedApprovalFlow.name}`,
+              body: `${approverName} has rejected the approval flow "${selectedApprovalFlow.name}".\n\nReason for rejection: ${rejectionComment}`,
+            },
+          });
+        }
+
+        // Create notification for submitter
+        await apiCall({
+          method: "POST",
+          url: "/api/Notification",
+          data: {
+            profileId: approvalFlow.createdById,
+            generalId: selectedApprovalFlow.approvalId,
+            type: "approvalFlow",
+            message: `Your approval flow "${selectedApprovalFlow.name}" has been rejected by ${approverName}`,
+            isViewed: false,
+          },
+        });
+
+        // Send rejection email to submitter
+        await apiCall({
+          method: "POST",
+          url: "/api/Email/send",
+          data: {
+            to: submitterProfile.email,
+            subject: `Approval Flow Rejected: ${selectedApprovalFlow.name}`,
+            body: `Your approval flow "${selectedApprovalFlow.name}" has been rejected by ${approverName}.\n\nReason for rejection: ${rejectionComment}\n\nThe approval flow has been terminated and all pending approvals have been cancelled.`,
+          },
+        });
+      } catch (error) {
+        console.error("Error sending notifications:", error);
+        // Don't throw error here, as the main rejection process was successful
+      }
+
       // Close loading message
       loadingMessage();
 
@@ -467,19 +665,30 @@ const Review = () => {
   };
 
   const handleSearchButtonClick = () => {
-    const lowerVal = searchTerm.toLowerCase();
-    setIsSearching(searchTerm.trim().length > 0); // Update search state
+    if (!searchTerm.trim()) {
+      // If search is empty, show pending flows
+      const pendingFlows = approvalFlows.filter(
+        (flow) => flow.approverStatus?.toLowerCase() === "pending"
+      );
+      setFilteredPolicies(pendingFlows);
+      setSuggestions([]);
+      return;
+    }
 
-    const matches = approvalFlows.filter(
-      (flow) =>
-        flow.approvalId?.toString().toLowerCase().includes(lowerVal) ||
-        flow.name?.toLowerCase().includes(lowerVal) ||
-        flow.type?.toLowerCase().includes(lowerVal) ||
-        flow.status?.toLowerCase().includes(lowerVal)
-    );
-    setSuggestions([]);
-    setFilteredPolicies(matches);
-    setShowConfirmation(false);
+    // Perform search if we have at least 1 character
+    if (searchTerm.trim().length > 0) {
+      const lowerVal = searchTerm.toLowerCase();
+      const matches = approvalFlows.filter(
+        (flow) =>
+          flow.approvalId?.toString().toLowerCase().includes(lowerVal) ||
+          flow.name?.toLowerCase().includes(lowerVal) ||
+          flow.type?.toLowerCase().includes(lowerVal) ||
+          flow.status?.toLowerCase().includes(lowerVal)
+      );
+      setSuggestions([]);
+      setFilteredPolicies(matches);
+      setShowConfirmation(false);
+    }
   };
 
   // Define base columns
@@ -843,127 +1052,16 @@ const Review = () => {
   };
 
   return (
-    <div
-      style={{
-        marginTop: "50px",
-      }}
-    >
-      <RoleBasedContent allowedRoles={["admin", "approver"]}>
-        <h2>Review</h2>
-
-        {/* Approval Success Alert */}
-        {showApprovalSuccessAlert && (
-          <div style={{ marginBottom: "16px" }}>
-            <Alert
-              message="Approval Successful"
-              description="Your approval has been recorded successfully. The approval flow status has been updated."
-              type="success"
-              showIcon
-              closable
-              onClose={() => setShowApprovalSuccessAlert(false)}
-              style={{
-                backgroundColor: darkMode ? "#162312" : "#f6ffed",
-                border: darkMode ? "1px solid #274916" : "1px solid #b7eb8f",
-                color: darkMode ? "#fff" : "#000",
-              }}
-            />
-          </div>
-        )}
-
-        {/* Search Section */}
-        <div
-          style={{
-            background: darkMode ? "#1e1e1e" : "#fff",
-            color: darkMode ? "#fff" : "#000",
-            borderRadius: "8px",
-            padding: "24px",
-            boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)",
-            marginBottom: "16px",
-          }}
-        >
-          <h3
-            style={{
-              margin: "0 0 16px 0",
-              fontSize: "18px",
-              fontWeight: "600",
-            }}
-          >
-            Search Approval Flows
-          </h3>
-          <div style={{ position: "relative" }}>
-            <Space.Compact style={{ width: "100%" }}>
-              <Input
-                value={searchTerm}
-                onChange={handleSearchChange}
-                placeholder="Search for approval flows by ID, policy name, type or status"
-                size="large"
-              />
-              <Button
-                icon={<SearchOutlined />}
-                onClick={handleSearchButtonClick}
-                size="large"
-              />
-            </Space.Compact>
-            {suggestions.length > 0 && (
-              <div
-                ref={suggestionBoxRef}
-                style={{
-                  position: "absolute",
-                  background: darkMode ? "#333" : "#fff",
-                  color: darkMode ? "#fff" : "#000",
-                  border: "1px solid #ccc",
-                  borderRadius: 4,
-                  zIndex: 1,
-                  width: "100%",
-                  maxHeight: 200,
-                  overflowY: "auto",
-                  marginTop: "4px",
-                }}
-              >
-                {suggestions.map((s) => (
-                  <div
-                    key={s.id}
-                    onClick={() => handleSuggestionClick(s)}
-                    style={{
-                      padding: 8,
-                      cursor: "pointer",
-                      borderBottom: "1px solid #eee",
-                    }}
-                  >
-                    {s.id} - {s.name}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {showConfirmation && (
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ maxWidth: 400 }}>
-              <Alert
-                message="Your approval flow was successfully processed"
-                type="success"
-                showIcon
-              />
-            </div>
-            {selectedPolicy && (
-              <div style={{ marginTop: 12 }}>
-                <div>
-                  <strong>Flow ID:</strong> {selectedPolicy.id}
-                </div>
-                <div>
-                  <strong>Policy Name:</strong> {selectedPolicy.name}
-                </div>
-                <div>
-                  <strong>Status:</strong> {selectedPolicy.status}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {!showConfirmation && filteredPolicies.length > 0 && (
+    <div style={{ padding: "20px" }}>
+      {!isApprover ? (
+        <Alert
+          message="Access Denied"
+          description="You don't have permission to view this content. Required: approver role"
+          type="error"
+          showIcon
+        />
+      ) : (
+        <>
           <div
             style={{
               background: darkMode ? "#1e1e1e" : "#fff",
@@ -974,48 +1072,156 @@ const Review = () => {
               marginBottom: "16px",
             }}
           >
-            <h3
+            <h2>Review Panel</h2>
+            <div style={{ marginBottom: 16, position: "relative" }}>
+              <Input
+                placeholder="Search by approval ID, name, type, or status (enter at least 3 words)"
+                value={searchTerm}
+                onChange={handleSearchChange}
+                style={{ width: "100%" }}
+                suffix={<SearchOutlined />}
+              />
+              {suggestions.length > 0 && (
+                <div
+                  ref={suggestionBoxRef}
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    left: 0,
+                    width: "100%",
+                    maxHeight: "300px",
+                    overflowY: "auto",
+                    background: darkMode ? "#333" : "#fff",
+                    color: darkMode ? "#fff" : "#000",
+                    boxShadow: darkMode
+                      ? "0 2px 8px rgba(0, 0, 0, 0.5)"
+                      : "0 2px 8px rgba(0, 0, 0, 0.15)",
+                    zIndex: 1000,
+                    borderRadius: 4,
+                    border: darkMode ? "1px solid #555" : "1px solid #ccc",
+                    marginTop: "4px",
+                  }}
+                >
+                  {suggestions.map((flow) => (
+                    <div
+                      key={flow.approvalId}
+                      onClick={() => handleSuggestionClick(flow)}
+                      style={{
+                        padding: "8px 12px",
+                        cursor: "pointer",
+                        borderBottom: darkMode
+                          ? "1px solid #555"
+                          : "1px solid #ddd",
+                        transition: "background-color 0.3s ease",
+                        ":hover": {
+                          backgroundColor: darkMode ? "#444" : "#f5f5f5",
+                        },
+                      }}
+                    >
+                      <div style={{ fontWeight: "bold", marginBottom: "2px" }}>
+                        {flow.name || flow.approvalId}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          color: darkMode ? "#999" : "#666",
+                          display: "flex",
+                          gap: "8px",
+                        }}
+                      >
+                        <span>Type: {flow.type}</span>
+                        <span>•</span>
+                        <span>Status: {flow.status}</span>
+                        {flow.approverStatus && (
+                          <>
+                            <span>•</span>
+                            <span>Approver Status: {flow.approverStatus}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {showConfirmation && (
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ maxWidth: 400 }}>
+                <Alert
+                  message="Your approval flow was successfully processed"
+                  type="success"
+                  showIcon
+                />
+              </div>
+              {selectedPolicy && (
+                <div style={{ marginTop: 12 }}>
+                  <div>
+                    <strong>Flow ID:</strong> {selectedPolicy.id}
+                  </div>
+                  <div>
+                    <strong>Policy Name:</strong> {selectedPolicy.name}
+                  </div>
+                  <div>
+                    <strong>Status:</strong> {selectedPolicy.status}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!showConfirmation && filteredPolicies.length > 0 && (
+            <div
               style={{
-                margin: "0 0 16px 0",
-                fontSize: "18px",
-                fontWeight: "600",
+                background: darkMode ? "#1e1e1e" : "#fff",
+                color: darkMode ? "#fff" : "#000",
+                borderRadius: "8px",
+                padding: "24px",
+                boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)",
+                marginBottom: "16px",
               }}
             >
-              Approval Flows for Review ({filteredPolicies.length} found)
-            </h3>
-            <Table
-              columns={columns}
-              dataSource={filteredPolicies}
-              rowKey="approvalId"
-              loading={loading}
-              expandable={{
-                expandedRowRender,
-                expandedRowKeys,
-                onExpand: (expanded, record) => {
-                  setExpandedRowKeys(expanded ? [record.approvalId] : []);
-                },
-                expandIcon: ({ expanded, onExpand, record }) =>
-                  expanded ? (
-                    <MinusOutlined onClick={(e) => onExpand(record, e)} />
-                  ) : (
-                    <PlusOutlined onClick={(e) => onExpand(record, e)} />
-                  ),
-              }}
-              pagination={{
-                pageSize: 10,
-                showSizeChanger: true,
-                showQuickJumper: true,
-                showTotal: (total, range) =>
-                  `${range[0]}-${range[1]} of ${total} approval flows`,
-              }}
-            />
-          </div>
-        )}
+              <h3
+                style={{
+                  margin: "0 0 16px 0",
+                  fontSize: "18px",
+                  fontWeight: "600",
+                }}
+              >
+                Approval Flows for Review ({filteredPolicies.length} found)
+              </h3>
+              <Table
+                columns={columns}
+                dataSource={filteredPolicies}
+                rowKey="approvalId"
+                loading={loading}
+                expandable={{
+                  expandedRowRender,
+                  expandedRowKeys,
+                  onExpand: (expanded, record) => {
+                    setExpandedRowKeys(expanded ? [record.approvalId] : []);
+                  },
+                  expandIcon: ({ expanded, onExpand, record }) =>
+                    expanded ? (
+                      <MinusOutlined onClick={(e) => onExpand(record, e)} />
+                    ) : (
+                      <PlusOutlined onClick={(e) => onExpand(record, e)} />
+                    ),
+                }}
+                pagination={{
+                  pageSize: 10,
+                  showSizeChanger: true,
+                  showQuickJumper: true,
+                  showTotal: (total, range) =>
+                    `${range[0]}-${range[1]} of ${total} approval flows`,
+                }}
+              />
+            </div>
+          )}
 
-        {/* Display message when search is performed but no results found */}
-        {!showConfirmation &&
-          searchTerm.trim() &&
-          filteredPolicies.length === 0 && (
+          {/* Display message when search is performed but no results found */}
+          {searchTerm && !loading && filteredPolicies.length === 0 && (
             <div
               style={{
                 background: darkMode ? "#1e1e1e" : "#fff",
@@ -1034,152 +1240,90 @@ const Review = () => {
             </div>
           )}
 
-        <Modal
-          title="Confirm Policy Approval"
-          open={isModalVisible}
-          onOk={handleModalOk}
-          onCancel={handleModalCancel}
-          okText="Yes, Proceed"
-          cancelText="Cancel"
-          styles={{
-            body: {
-              backgroundColor: darkMode ? "#1e1e1e" : "#fff",
-              color: darkMode ? "#fff" : "#000",
-            },
-            header: {
-              backgroundColor: darkMode ? "#1e1e1e" : "#fff",
-              borderBottom: darkMode
-                ? "1px solid #434a56"
-                : "1px solid #f0f0f0",
-            },
-            content: {
-              backgroundColor: darkMode ? "#1e1e1e" : "#fff",
-            },
-          }}
-        >
-          <div style={{ color: darkMode ? "#fff" : "#000" }}>
-            Would you like to proceed with approving this policy?
-          </div>
-        </Modal>
-
-        {/* Rejection Modal */}
-        <Modal
-          title="Reject Policy"
-          open={isRejectionModalVisible}
-          onOk={handleRejectionSubmit}
-          onCancel={handleRejectionCancel}
-          okText="Reject"
-          cancelText="Cancel"
-          okButtonProps={{
-            danger: true,
-            disabled:
-              !rejectionComment.trim() || rejectionComment.trim().length === 0,
-          }}
-          styles={{
-            body: {
-              backgroundColor: darkMode ? "#1e1e1e" : "#fff",
-              color: darkMode ? "#fff" : "#000",
-            },
-            header: {
-              backgroundColor: darkMode ? "#1e1e1e" : "#fff",
-              borderBottom: darkMode
-                ? "1px solid #434a56"
-                : "1px solid #f0f0f0",
-            },
-            content: {
-              backgroundColor: darkMode ? "#1e1e1e" : "#fff",
-            },
-          }}
-        >
-          <p style={{ color: darkMode ? "#fff" : "#000" }}>
-            Please provide a reason for rejecting this policy (required):
-          </p>
-          <TextArea
-            value={rejectionComment}
-            onChange={(e) => setRejectionComment(e.target.value)}
-            placeholder="Enter rejection reason... (max 150 characters)"
-            rows={4}
-            maxLength={150}
-            showCount
-            style={{
-              marginTop: 8,
-              backgroundColor: darkMode ? "#2a2a2a" : "#fff",
-              color: darkMode ? "#fff" : "#000",
-              borderColor: darkMode ? "#434a56" : "#d9d9d9",
+          {/* Approval Modal */}
+          <Modal
+            title="Approve Flow"
+            open={isApprovalModalVisible}
+            onOk={handleApprovalSubmit}
+            onCancel={handleApprovalCancel}
+            okText="Submit Approval"
+            cancelText="Cancel"
+            className={darkMode ? "dark-theme" : ""}
+            styles={{
+              content: {
+                background: darkMode ? "#141414" : "#fff",
+              },
+              header: {
+                background: darkMode ? "#141414" : "#fff",
+                color: darkMode ? "#fff" : "rgba(0, 0, 0, 0.88)",
+              },
+              body: {
+                background: darkMode ? "#141414" : "#fff",
+                color: darkMode ? "#fff" : "rgba(0, 0, 0, 0.88)",
+              },
+              footer: {
+                background: darkMode ? "#141414" : "#fff",
+              },
             }}
-          />
-          {rejectionComment.length > 0 && (
-            <div
+          >
+            <p style={{ color: darkMode ? "#fff" : "rgba(0, 0, 0, 0.88)" }}>
+              Please enter any comments for this approval (optional):
+            </p>
+            <TextArea
+              value={approvalComment}
+              onChange={(e) => setApprovalComment(e.target.value)}
+              rows={4}
               style={{
-                marginTop: 8,
-                fontSize: "12px",
-                color: darkMode ? "#888" : "#666",
+                background: darkMode ? "#1f1f1f" : "#fff",
+                color: darkMode ? "#fff" : "rgba(0, 0, 0, 0.88)",
+                borderColor: darkMode ? "#434343" : "#d9d9d9",
               }}
-            >
-              {rejectionComment.length}/150 characters
-            </div>
-          )}
-        </Modal>
+            />
+          </Modal>
 
-        {/* Approval Modal with Comment */}
-        <Modal
-          title="Approve Policy"
-          open={isApprovalModalVisible}
-          onOk={handleApprovalSubmit}
-          onCancel={handleApprovalCancel}
-          okText="Approve"
-          cancelText="Cancel"
-          okButtonProps={{ type: "primary" }}
-          styles={{
-            body: {
-              backgroundColor: darkMode ? "#1e1e1e" : "#fff",
-              color: darkMode ? "#fff" : "#000",
-            },
-            header: {
-              backgroundColor: darkMode ? "#1e1e1e" : "#fff",
-              borderBottom: darkMode
-                ? "1px solid #434a56"
-                : "1px solid #f0f0f0",
-            },
-            content: {
-              backgroundColor: darkMode ? "#1e1e1e" : "#fff",
-            },
-          }}
-        >
-          <p style={{ color: darkMode ? "#fff" : "#000" }}>
-            Would you like to proceed with approving this policy?
-          </p>
-          <p style={{ color: darkMode ? "#fff" : "#000", marginTop: 16 }}>
-            Optional: Add a comment about your approval decision:
-          </p>
-          <TextArea
-            value={approvalComment}
-            onChange={(e) => setApprovalComment(e.target.value)}
-            placeholder="Enter approval comment (optional)..."
-            rows={3}
-            style={{
-              marginTop: 8,
-              backgroundColor: darkMode ? "#2a2a2a" : "#fff",
-              color: darkMode ? "#fff" : "#000",
-              borderColor: darkMode ? "#434a56" : "#d9d9d9",
+          {/* Rejection Modal */}
+          <Modal
+            title="Reject Flow"
+            open={isRejectionModalVisible}
+            onOk={handleRejectionSubmit}
+            onCancel={handleRejectionCancel}
+            okText="Submit Rejection"
+            cancelText="Cancel"
+            className={darkMode ? "dark-theme" : ""}
+            styles={{
+              content: {
+                background: darkMode ? "#141414" : "#fff",
+              },
+              header: {
+                background: darkMode ? "#141414" : "#fff",
+                color: darkMode ? "#fff" : "rgba(0, 0, 0, 0.88)",
+              },
+              body: {
+                background: darkMode ? "#141414" : "#fff",
+                color: darkMode ? "#fff" : "rgba(0, 0, 0, 0.88)",
+              },
+              footer: {
+                background: darkMode ? "#141414" : "#fff",
+              },
             }}
-          />
-        </Modal>
-      </RoleBasedContent>
-
-      <RoleBasedContent allowedRoles={["viewer"]} fallback>
-        <Alert
-          message="Access Denied"
-          description="You don't have permission to access the Review Panel. Admin or Approver role required."
-          type="warning"
-          showIcon
-          style={{
-            background: darkMode ? "#29303d" : undefined,
-            color: darkMode ? "#fff" : undefined,
-            border: darkMode ? "1px solid #434a56" : undefined,
-          }}
-        />
-      </RoleBasedContent>
+          >
+            <p style={{ color: darkMode ? "#fff" : "rgba(0, 0, 0, 0.88)" }}>
+              Please provide a reason for rejection:
+            </p>
+            <TextArea
+              value={rejectionComment}
+              onChange={(e) => setRejectionComment(e.target.value)}
+              rows={4}
+              required
+              style={{
+                background: darkMode ? "#1f1f1f" : "#fff",
+                color: darkMode ? "#fff" : "rgba(0, 0, 0, 0.88)",
+                borderColor: darkMode ? "#434343" : "#d9d9d9",
+              }}
+            />
+          </Modal>
+        </>
+      )}
     </div>
   );
 };

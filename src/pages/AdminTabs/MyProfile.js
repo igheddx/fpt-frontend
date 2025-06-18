@@ -10,6 +10,8 @@ import {
   Switch,
   Alert,
   Space,
+  Row,
+  Col,
 } from "antd";
 
 import { SearchOutlined } from "@ant-design/icons";
@@ -22,13 +24,16 @@ import { updateDataById } from "../../hooks/axiosFakeInstance";
 import axiosInstance from "../../hooks/axiosInstance";
 import ReusableSearch from "../../components/ReuseableSearch";
 import { generateUniqueNumber } from "../../utils/randomNumber";
-import useApi from "../../hooks/useApi";
+import { useApi } from "../../hooks/useApi";
+import { useAccountContext } from "../../contexts/AccountContext";
 
 const { Option } = Select;
 
 const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
+  const { darkMode } = useDarkMode();
+  const { switchContext } = useAccountContext();
   const [form] = Form.useForm();
-  const apiCall = useApi();
+  const { apiCall } = useApi();
   const [submittedData, setSubmittedData] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -39,12 +44,10 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
   const [orgCustAccountForProfile, setOrgCustAccountForProfile] =
     useState(null);
   const tableRef = useRef(null);
-  const { darkMode } = useDarkMode();
   const [searchText, setSearchText] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [filteredUsers, setFilteredUsers] = useState([]);
 
-  //const [searchResults, setSearchResults] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedData, setSelectedData] = useState(null);
   const [firstNameValue, setFirstNameValue] = useState("");
@@ -68,12 +71,15 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
     type: "",
     message: "",
   });
+  const [resendAlert, setResendAlert] = useState({
+    visible: false,
+    type: "",
+    message: "",
+  });
+
+  const isConfirmed = Form.useWatch("isConfirmed", form);
 
   console.log("darkmode  on myprofile ==", darkMode);
-  // Preselect the organiz
-  //
-  // ation and cloud accounts when the component mounts
-  // Preselect the organization and cloud accounts when the component mounts
   useEffect(() => {
     form.setFieldsValue({
       organizations: selectedOrganization ? [selectedOrganization] : [],
@@ -92,15 +98,18 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
         customers: selectedData.custId,
         cloudAccounts: selectedData.cloudId,
         accessLevel: selectedData.accessLevel,
-        active: selectedData.isConfirmed,
+        isConfirmed: selectedData.isConfirmed,
       });
       setSelectedProfileId(selectedData.profileId);
       console.log("@selectedData ==", selectedData);
       console.log("@selectedProfileId ==", selectedData.profileId);
+
+      console.log("isConfirmed ==", selectedData.isConfirmed);
+      console.log("isConfirmed ==", JSON.stringify(selectedData.isConfirmed));
+
       setIsUpdate(true);
       setCurrentRecord(selectedData);
 
-      // Only fetch organization hierarchy when updating an existing profile
       if (isUpdate) {
         const fetchOrgHierarchy = async () => {
           try {
@@ -132,12 +141,10 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
 
   useEffect(() => {
     const getOrgData = () => {
-      // Save to localStorage
       getDataAll("organizations")
         .then((data) => {
           console.log("New or customer", JSON.stringify(data));
           console.log("new org customer==", data);
-          //setSelectedOrg(updatedData);
           setOrganizations(data);
         })
         .catch((error) => {
@@ -152,11 +159,9 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
     console.log("QUERY ==", query);
     if (query.length >= 3) {
       try {
-        // Check if current user is root or admin to allow unrestricted search
         const currentUserAccessLevel = sessionStorage.getItem("accessLevel");
         console.log("Current user access level:", currentUserAccessLevel);
 
-        // For root users, use the dedicated unrestricted endpoint
         if (currentUserAccessLevel === "root") {
           console.log("Using unrestricted search endpoint for root user");
           const data = await apiCall({
@@ -167,7 +172,7 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
               delimiter: ",",
             },
             headers: {
-              "X-Access-Level": "root", // Send access level for backend validation
+              "X-Access-Level": "root",
             },
           });
           console.log("Root user unrestricted profile search results:", data);
@@ -175,26 +180,29 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
           return data;
         }
 
-        // For admin and other users, use the existing search with unrestricted flag
         console.log(
           "Using standard search endpoint with unrestricted flag for admin"
         );
-        const data = await apiCall({
-          method: "get",
-          url: "/api/Profile/search-by-name",
-          params: {
-            name: query,
-            delimiter: ",",
-            // Add flag for admin users to bypass restrictions if needed
-            ...(currentUserAccessLevel === "admin" && { unrestricted: true }),
-          },
-        });
-        console.log("Profile search results:", data);
-        setSearchResults(data);
-        return data;
+
+        try {
+          const data = await apiCall({
+            method: "GET",
+            url: "/api/Profile/search-by-name",
+            params: {
+              name: query,
+              delimiter: ",",
+              ...(currentUserAccessLevel === "admin" && { unrestricted: true }),
+            },
+          });
+          console.log("Profile search results:", data);
+          setSearchResults(data);
+          return data;
+        } catch (error) {
+          console.error("Error fetching Profile:", error);
+          setSearchResults([]);
+        }
       } catch (error) {
         console.error("Error searching profiles:", error);
-        // Add more detailed error logging
         if (error.response) {
           console.error("Error response:", {
             status: error.response.status,
@@ -282,7 +290,7 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
         email: user.email,
         organizations: user.organizations,
         role: user.role,
-        active: user.active,
+        isConfirmed: user.isConfirmed,
       });
       setIsUpdate(true);
       setCurrentRecord(user);
@@ -313,9 +321,6 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
         (p.role && p.role.toLowerCase().includes(lowerVal))
     );
 
-    // const user = searchResults.find(
-    //   (u) => `${u.firstName} ${u.lastName}` === value
-    // );
     if (matches) {
       form.setFieldsValue({
         firstName: matches.firstName,
@@ -329,27 +334,15 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
       setCurrentRecord(matches);
       setSearchResults([]);
       setSuggestions([]);
-      //setFilteredUsers(matches);
     }
-
-    //setShowConfirmation(false);
   };
 
   const handleSuggestionClick = (profile) => {
     const profileId = profile.profileId;
     setSelectedProfileId(profile.profileId);
     console.log("Selected profile ID:", profileId);
-    //setFilteredPolicies([policy]);
-    //setSearchTerm(policy.policyName);
     setSuggestions([]);
   };
-
-  // const highlightText = (text) => {
-  //   console.log("highlightText was called");
-  //   if (!text) return "";
-  //   const regex = new RegExp(`(${query})`, "gi");
-  //   return text.replace(regex, `<b>$1</b>`);
-  // };
 
   const handleOrganizationChange = (orgId) => {
     console.log("orgid ==", orgId);
@@ -382,25 +375,24 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
     }
 
     try {
-      // Show loading message
       setUpdateAlert({
         message: "Updating profile...",
         type: "info",
         visible: true,
       });
 
-      // Only include fields that we want to update
       const updateData = {
         Id: selectedData.profileId,
         FirstName: values.firstName,
         LastName: values.lastName,
         AccessLevel: values.accessLevel,
-        Email: values.email, // Email is required by the model
-        // Only include IsConfirmed if it's specifically changed via the switch
-        ...(values.active !== undefined && { IsConfirmed: values.active }),
+
+        Email: values.email,
+        ...(values.isConfirmed !== undefined && {
+          IsConfirmed: values.isConfirmed,
+        }),
       };
 
-      // Validate required fields for update
       if (
         !updateData.FirstName ||
         !updateData.LastName ||
@@ -410,10 +402,8 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
         throw new Error("Missing required fields");
       }
 
-      // Log the exact data being sent
       console.log("Sending update request with data:", updateData);
 
-      // Update profile
       await apiCall({
         method: "put",
         url: `/api/Profile/${selectedData.profileId}`,
@@ -424,26 +414,22 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
       });
 
       console.log("##selectedData.profileId =", selectedData.profileId);
-      // Get updated profile data
       console.log("##selectedProfileId ==", selectedProfileId);
       const profileResponse = await apiCall({
         method: "get",
         url: `/api/Profile/${selectedData.profileId}`,
       });
-      // Restructure the response to change Id to profileId
       const updatedProfile = {
         ...profileResponse,
         profileId: profileResponse.id,
       };
       delete updatedProfile.id;
 
-      // Update states with restructured data
       setSelectedData(updatedProfile);
 
       console.log("Updated profile data:", JSON.stringify(profileResponse));
       setSelectedProfileId(profileResponse.id);
 
-      // Get updated organization hierarchy
       const orgResponse = await apiCall({
         method: "get",
         url: `/api/Profile/${selectedProfileId}/organizations`,
@@ -452,34 +438,19 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
       setOrgCustAccountForProfile(orgResponse);
       console.log("##Updated organization hierarchy:", orgResponse);
 
-      // Update form with new profile data
       form.setFieldsValue({
         firstName: profileResponse.firstName,
         lastName: profileResponse.lastName,
         email: profileResponse.email,
-        //permission: profileResponse.permission,
-        //organizations: profileResponse.orgId,
-        //customers: profileResponse.custId,
-        //cloudAccounts: profileResponse.cloudId,
         accessLevel: profileResponse.accessLevel,
-        active: profileResponse.isConfirmed,
+        isConfirmed: profileResponse.isConfirmed,
       });
 
-      // Show success message
       setUpdateAlert({
         message: "Profile updated successfully",
         type: "success",
         visible: true,
       });
-
-      // Clear alert after 3 seconds
-      // setTimeout(() => {
-      //   setUpdateAlert({
-      //     visible: false,
-      //     type: "",
-      //     message: "",
-      //   });
-      // }, 3000);
     } catch (error) {
       console.error("Profile update error:", error);
       setUpdateAlert({
@@ -494,35 +465,29 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
 
   const handleCreate = async (values) => {
     try {
-      // Show loading message
       setCreateAlert({
         message: "Creating profile...",
         type: "info",
         visible: true,
       });
 
-      // Prepare the create data
       const createData = {
         firstName: values.firstName,
         lastName: values.lastName,
         email: values.email,
         accessLevel: values.accessLevel,
-        password: values.tempPassword,
         isConfirmed: false,
       };
 
-      // Validate required fields
       if (
         !createData.firstName ||
         !createData.lastName ||
         !createData.accessLevel ||
-        !createData.email ||
-        !createData.password
+        !createData.email
       ) {
         throw new Error("Missing required fields");
       }
 
-      // Create profile
       const response = await apiCall({
         method: "post",
         url: "http://localhost:5000/api/profile",
@@ -532,17 +497,13 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
         },
       });
 
-      // Show success message
       setCreateAlert({
-        message: "Profile created successfully",
+        message:
+          "Profile created successfully. A setup email has been sent to the user.",
         type: "success",
         visible: true,
       });
 
-      // Reset form
-      form.resetFields();
-
-      // Reset form
       form.resetFields();
     } catch (error) {
       console.error("Profile creation error:", error);
@@ -570,11 +531,6 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
     { title: "Last Name", dataIndex: "lastName", key: "lastName" },
     { title: "Email", dataIndex: "email", key: "email" },
     {
-      title: "Temporary Password",
-      dataIndex: "tempPassword",
-      key: "tempPassword",
-    },
-    {
       title: "Organizations",
       dataIndex: "organizations",
       key: "organizations",
@@ -589,7 +545,6 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
     },
   ];
 
-  // Columns for the organization hierarchy table
   const orgHierarchyColumns = [
     {
       title: "Organization",
@@ -605,7 +560,6 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
     },
   ];
 
-  // Columns for the customer table (middle level)
   const customerColumns = [
     {
       title: "Customer",
@@ -621,7 +575,6 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
     },
   ];
 
-  // Columns for the cloud accounts table (lowest level)
   const cloudAccountColumns = [
     {
       title: "Account Name",
@@ -643,7 +596,6 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
     },
   ];
 
-  // Render function for cloud accounts (lowest level)
   const expandedRowRender = (record) => {
     return (
       <Table
@@ -653,6 +605,51 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
         size="small"
       />
     );
+  };
+
+  const handleResendVerification = async () => {
+    try {
+      setResendAlert({
+        visible: true,
+        type: "info",
+        message: "Sending verification email...",
+      });
+
+      console.log("@@Selected profile ID for verification:", selectedProfileId);
+      if (!selectedProfileId) {
+        throw new Error("No profile selected");
+      }
+
+      const formEmail = form.getFieldValue("email");
+      if (!formEmail) {
+        throw new Error("No email address found");
+      }
+
+      console.log("Sending verification to email:", formEmail);
+      const response = await apiCall({
+        method: "post",
+        url: `/api/Profile/${selectedProfileId}/resend-verification`,
+        data: { email: formEmail },
+        isAuthRequest: true,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      setResendAlert({
+        visible: true,
+        type: "success",
+        message: response.message || "Verification email sent successfully",
+      });
+    } catch (error) {
+      console.error("Error sending verification email:", error);
+      setResendAlert({
+        visible: true,
+        type: "error",
+        message:
+          error.response?.data?.message || "Failed to send verification email",
+      });
+    }
   };
 
   return (
@@ -668,7 +665,6 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
       >
         <div style={{ padding: "24px" }}>
           <div style={{ position: "relative", width: 400, marginBottom: 24 }}>
-            {" "}
             <ReusableSearch
               fetchData={fetchData}
               queryString={(qry) => setSearchQuery(qry)}
@@ -688,7 +684,6 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
             />
             {suggestions.length > 0 && (
               <div
-                // ref={suggestionBoxRef}
                 style={{
                   position: "absolute",
                   background: darkMode ? "#333" : "#fff",
@@ -705,10 +700,6 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
                   <div
                     key={s.profileId}
                     onClick={() => handleSuggestionClick(s)}
-                    // onClick={() => handleSuggestionClick(s)}
-                    // dangerouslySetInnerHTML={{
-                    //   __html: highlightText(s.firstName),
-                    // }}
                     style={{
                       padding: "8px 12px",
                       cursor: "pointer",
@@ -724,12 +715,24 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
             )}
           </div>
 
-          {(createAlert.visible || updateAlert.visible) && (
+          {(createAlert.visible ||
+            updateAlert.visible ||
+            resendAlert.visible) && (
             <Alert
               message={
-                createAlert.visible ? createAlert.message : updateAlert.message
+                resendAlert.visible
+                  ? resendAlert.message
+                  : createAlert.visible
+                  ? createAlert.message
+                  : updateAlert.message
               }
-              type={createAlert.visible ? createAlert.type : updateAlert.type}
+              type={
+                resendAlert.visible
+                  ? resendAlert.type
+                  : createAlert.visible
+                  ? createAlert.type
+                  : updateAlert.type
+              }
               showIcon
               style={{
                 marginBottom: 16,
@@ -781,7 +784,7 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
                   rules={[{ required: true, type: "email" }]}
                   style={{ flex: 1, marginBottom: 0 }}
                 >
-                  <Input size="large" />
+                  <Input size="large" disabled={isUpdate} />
                 </Form.Item>
 
                 <Form.Item
@@ -808,30 +811,12 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
               {isUpdate && (
                 <div style={{ display: "flex", marginBottom: "16px" }}>
                   <Form.Item
-                    name="active"
-                    label="Account Status"
+                    name="isConfirmed"
+                    label="Account Confirmed"
                     valuePropName="checked"
                     style={{ flex: 1, marginBottom: 0 }}
                   >
-                    <Switch
-                      checkedChildren="Active"
-                      unCheckedChildren="Inactive"
-                    />
-                  </Form.Item>
-                </div>
-              )}
-
-              {!isUpdate && (
-                <div
-                  style={{ display: "flex", gap: "16px", marginBottom: "16px" }}
-                >
-                  <Form.Item
-                    name="tempPassword"
-                    label="Temporary Password"
-                    rules={[{ required: true }]}
-                    style={{ flex: 1, marginBottom: 0 }}
-                  >
-                    <Input.Password size="large" />
+                    <Switch checkedChildren="Yes" unCheckedChildren="No" />
                   </Form.Item>
                 </div>
               )}
@@ -839,31 +824,57 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
               <div
                 style={{
                   display: "flex",
-                  justifyContent: "flex-end",
+                  justifyContent: "space-between",
                   marginTop: "24px",
                   gap: "8px",
                 }}
               >
-                <Button type="primary" htmlType="submit" size="large">
-                  {isUpdate ? "Update" : "Save"}
-                </Button>
-                {isUpdate && (
-                  <Button
-                    size="large"
-                    style={{ backgroundColor: "#ff8c00" }}
-                    onClick={() => {
-                      setSelectedData(null);
-                      setIsUpdate(false);
-                      setOrgCustAccountForProfile(null);
-                      setCreateAlert({ visible: false, type: "", message: "" });
-                      setUpdateAlert({ visible: false, type: "", message: "" });
-                      setAlert({ visible: false, type: "", message: "" });
-                      form.resetFields();
-                    }}
-                  >
-                    Exit Update
+                <div>
+                  {isUpdate && !isConfirmed && (
+                    <Button
+                      size="large"
+                      style={{ backgroundColor: "#808080", color: "#fff" }}
+                      onClick={handleResendVerification}
+                    >
+                      Resend Verification Email
+                    </Button>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <Button type="primary" htmlType="submit" size="large">
+                    {isUpdate ? "Update" : "Save"}
                   </Button>
-                )}
+                  {isUpdate && (
+                    <Button
+                      size="large"
+                      style={{ backgroundColor: "#ff8c00" }}
+                      onClick={() => {
+                        setSelectedData(null);
+                        setIsUpdate(false);
+                        setOrgCustAccountForProfile(null);
+                        setCreateAlert({
+                          visible: false,
+                          type: "",
+                          message: "",
+                        });
+                        setUpdateAlert({
+                          visible: false,
+                          type: "",
+                          message: "",
+                        });
+                        setResendAlert({
+                          visible: false,
+                          type: "",
+                          message: "",
+                        });
+                        setAlert({ visible: false, type: "", message: "" });
+                        form.resetFields();
+                      }}
+                    >
+                      Exit Update
+                    </Button>
+                  )}
+                </div>
               </div>
             </Form>
           </div>

@@ -1,0 +1,22 @@
+.search-results-table.light {
+  /* Light mode styles */
+  --border-color: #d9d9d9;
+}
+
+.search-results-table.dark {
+  /* Dark mode styles */
+  --border-color: #434343;
+}
+
+.search-results-table .ant-table-tbody > tr > td {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.search-results-table .ant-table-thead > tr > th {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.search-results-table .ant-table-tbody > tr:hover > td {
+  background-color: var(--border-color) !important;
+  opacity: 0.6;
+} 

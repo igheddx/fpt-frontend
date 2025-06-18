@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import Login from "./authenticate/login";
 import ForgotPassword from "./authenticate/forgetPassword";
+import ChangePassword from "./authenticate/changePassword";
 import Dashboard from "./pages/Dashboard";
 import Admin from "./pages/Admin";
 import Profile from "./pages/Profile";
@@ -11,8 +12,10 @@ import PrivateRoute from "./components/PrivateRoute"; // Assuming you have a Pri
 import SearchComp from "./components/Search";
 import { DarkModeProvider, useDarkMode } from "./config/DarkModeContext";
 import { AccountContextProvider } from "./contexts/AccountContext";
+import { NotificationProvider } from "./context/NotificationContext";
 import { ConfigProvider } from "antd";
 import { initializeLocalStorage } from "./utils/initLocalStorage";
+import AdvancedSearch from "./pages/AdvancedSearch";
 
 //test
 const ThemedApp = () => {
@@ -37,20 +40,39 @@ const ThemedApp = () => {
       }}
     >
       <Routes>
-        {/* Use MainLayout as the wrapper for all nested routes */}
+        {/* Public routes */}
+        <Route path="/login" element={<Login />} />
+        <Route path="/forgetPassword" element={<ForgotPassword />} />
+        <Route path="/changePassword" element={<ChangePassword />} />
+
+        {/* Protected routes */}
         <Route element={<MainLayout />}>
-          {/* Define your routes here */}
-          {/* <Route path="/" element={<Navigate to="/dashboard" replace />} /> */}
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/admin" element={<Admin />} />
-          <Route path="/review" element={<Review />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/search" element={<SearchComp />} />
+          <Route path="/" element={<PrivateRoute element={<Dashboard />} />} />
+          <Route
+            path="/dashboard"
+            element={<PrivateRoute element={<Dashboard />} />}
+          />
+          <Route path="/admin" element={<PrivateRoute element={<Admin />} />} />
+          <Route
+            path="/review"
+            element={<PrivateRoute element={<Review />} />}
+          />
+          <Route
+            path="/profile"
+            element={<PrivateRoute element={<Profile />} />}
+          />
+          <Route
+            path="/search"
+            element={<PrivateRoute element={<SearchComp />} />}
+          />
+          <Route
+            path="/advanced-search"
+            element={<PrivateRoute element={<AdvancedSearch />} />}
+          />
         </Route>
 
-        {/* Add other routes, such as login */}
-        <Route path="/" element={<Login />} />
-        <Route path="/forgetPassword" element={<ForgotPassword />} />
+        {/* Catch all route - redirect to login */}
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </ConfigProvider>
   );
@@ -59,7 +81,9 @@ const ThemedApp = () => {
 const App = () => (
   <DarkModeProvider>
     <AccountContextProvider>
-      <ThemedApp />
+      <NotificationProvider>
+        <ThemedApp />
+      </NotificationProvider>
     </AccountContextProvider>
   </DarkModeProvider>
 );
