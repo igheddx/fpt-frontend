@@ -1,6 +1,26 @@
 import axios from "axios";
 
-const API_BASE_URL = "http://localhost:5000"; // Using backend API port
+// Determine the base URL based on environment
+const getBaseUrl = () => {
+  const env = process.env.REACT_APP_ENV || "development";
+
+  switch (env) {
+    case "local":
+      return "http://localhost:5000";
+    case "development":
+      return "http://fpt-dev1-api.us-east-2.elasticbeanstalk.com";
+    case "staging":
+      return "http://fpt-dev1-api.us-east-2.elasticbeanstalk.com";
+    case "production":
+      return "http://fpt-dev1-api.us-east-2.elasticbeanstalk.com";
+    default:
+      return "http://fpt-dev1-api.us-east-2.elasticbeanstalk.com";
+  }
+};
+
+const API_BASE_URL = getBaseUrl();
+console.log("Current environment:", process.env.REACT_APP_ENV);
+console.log("Using API base URL:", API_BASE_URL);
 
 const axiosInstance = axios.create({
   baseURL: API_BASE_URL,

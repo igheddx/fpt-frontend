@@ -1,1 +1,2 @@
-export const API_BASE_URL = "http://localhost:5000"; // Using backend API port
+export const API_BASE_URL =
+  "http://fpt-backend-api.us-east-2.elasticbeanstalk.com";

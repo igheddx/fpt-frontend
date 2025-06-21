@@ -1,16 +1,62 @@
+# version: 0.2
+
+# phases:
+#   install:
+#     runtime-versions:
+#       nodejs: 18
+#     commands:
+#       - echo Installing dependencies...
+#       - npm install
+
+#   build:
+#     commands:
+#       - echo Building the React app...
+#       - npm run build
+
+# artifacts:
+#   files:
+#     - build/**/*
+#     - scripts/**/*
+#     - appspec.yml
+# cache:
+#   paths:
+#     - "node_modules/**/*"
 version: 0.2
+
+env:
+  # You can also declare default values here, but it's optional if you're
+  # supplying these in the Console or via your pipeline.
+  variables:
+    # Default values in case not set in project settings:
+    REACT_APP_ENV: "development"
+    # You may choose a placeholder or leave empty; typically set in Console:
+    REACT_APP_API_URL: "http://fpt-dev1-api.us-east-2.elasticbeanstalk.com/"
 
 phases:
   install:
     runtime-versions:
       nodejs: 18
     commands:
-      - echo Installing dependencies...
-      - npm install
+      - echo "Installing dependencies..."
+      - npm ci
+
+  pre_build:
+    commands:
+      - echo "Setting up environment variables for CRA build..."
+      # Choose which file CRA should read. For a production-mode build,
+      # CRA loads .env.production then .env. We will create .env.production
+      # so that npm run build (NODE_ENV=production) uses our vars.
+      - |
+        echo "REACT_APP_ENV=$REACT_APP_ENV" > .env.production
+      - |
+        echo "REACT_APP_API_URL=$REACT_APP_API_URL" >> .env.production
+      - echo "Contents of .env.production:"
+      - cat .env.production
 
   build:
     commands:
-      - echo Building the React app...
+      - echo "Building the React app..."
+      # CRA automatically sets NODE_ENV=production when running `npm run build`.
       - npm run build
 
 artifacts:
@@ -18,6 +64,7 @@ artifacts:
     - build/**/*
     - scripts/**/*
     - appspec.yml
+
 cache:
   paths:
     - "node_modules/**/*"

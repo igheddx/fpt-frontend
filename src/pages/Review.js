@@ -793,7 +793,7 @@ const Review = () => {
 
       // Get resources from Resource endpoint
       const response = await apiCall({
-        method: "get",
+        method: "GET",
         //url: `/api/Resource/search?approvalId=${approvalId}`,
         url: `/api/ApprovalFlowLog/search?approvalId=${approvalId}`,
       });
@@ -1052,7 +1052,7 @@ const Review = () => {
   };
 
   return (
-    <div style={{ padding: "20px" }}>
+    <div style={{ padding: "20px", marginTop: "40px" }}>
       {!isApprover ? (
         <Alert
           message="Access Denied"
@@ -1069,11 +1069,14 @@ const Review = () => {
               borderRadius: "8px",
               padding: "24px",
               boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)",
-              marginBottom: "16px",
+              marginBottom: "30px",
+              marginTop: "30px",
             }}
           >
             <h2>Review Panel</h2>
-            <div style={{ marginBottom: 16, position: "relative" }}>
+            <div
+              style={{ marginBottom: 16, marginTop: 16, position: "relative" }}
+            >
               <Input
                 placeholder="Search by approval ID, name, type, or status (enter at least 3 words)"
                 value={searchTerm}
