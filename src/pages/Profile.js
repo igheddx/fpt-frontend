@@ -12,6 +12,7 @@ import {
   Space,
   Row,
   Col,
+  Tabs,
 } from "antd";
 
 import { SearchOutlined, PlusOutlined } from "@ant-design/icons";
@@ -35,6 +36,7 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
   const [form] = Form.useForm();
   const { apiCall, isLoading, error } = useApi();
   const tableRef = useRef(null);
+  const [activeTab, setActiveTab] = useState("myProfile");
 
   // Initialize all state variables before any useEffects
   const [selectedData, setSelectedData] = useState(null);
@@ -187,8 +189,6 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
   const fetchAccountContextData = async () => {
     try {
       setAccountContextLoading(true);
-
-      // Get profileId from session storage
       const profileId = getProfileIdFromSession();
 
       if (!profileId) {
@@ -209,102 +209,132 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
       response.organizations?.forEach((org) => {
         org.customers?.forEach((customer) => {
           customer.accounts?.forEach((account) => {
+            const optionKey = `${org.orgId}-${customer.customerId}-${account.accountId}`;
+            const optionValue = {
+              organizationId: org.orgId,
+              organizationName: org.name,
+              customerId: customer.customerId,
+              customerName: customer.name,
+              accountId: account.accountId,
+              accountName: account.name,
+              cloudType: account.cloudType,
+              defaultAccount: account.defaultAccount,
+              role: account.role || "viewer",
+            };
+
             dropdownOptions.push({
-              key: `${org.orgId}-${customer.customerId}-${account.accountId}`,
+              key: optionKey,
               label: `${customer.name} -- ${account.name} - ${account.cloudType}`,
-              value: {
-                organizationId: org.orgId,
-                organizationName: org.name,
-                customerId: customer.customerId,
-                customerName: customer.name,
-                accountId: account.accountId,
-                accountName: account.name,
-                cloudType: account.cloudType,
-                defaultAccount: account.defaultAccount,
-                role: account.role || "viewer",
-              },
+              value: optionValue,
             });
+
+            // If this is the default account, set it as selected
+            if (account.defaultAccount) {
+              setSelectedAccountContext(optionValue);
+            }
           });
         });
       });
 
       setAccountContextData(dropdownOptions);
 
-      // Check for existing context
+      // Check for existing context in session storage
       const existingContext = JSON.parse(
         sessionStorage.getItem("accountContext") || "{}"
       );
 
-      // Find default account if no existing context
-      if (!existingContext.accountId) {
-        const defaultAccount = dropdownOptions.find(
-          (option) => option.value.defaultAccount === true
-        );
-        if (defaultAccount) {
-          const profileData = JSON.parse(
-            sessionStorage.getItem("profileData") || "{}"
-          );
-          const accessLevel = sessionStorage.getItem("accessLevel");
-
-          const newContext = {
-            profileId: profileData.profileId,
-            firstName: profileData.firstName,
-            lastName: profileData.lastName,
-            email: profileData.email,
-            accessLevel: accessLevel,
-            organizationId: defaultAccount.value.organizationId,
-            organizationName: defaultAccount.value.organizationName,
-            customerId: defaultAccount.value.customerId,
-            customerName: defaultAccount.value.customerName,
-            accountId: defaultAccount.value.accountId,
-            accountName: defaultAccount.value.accountName,
-            cloudType: defaultAccount.value.cloudType,
-            permissions: defaultAccount.value.role || "viewer",
-          };
-
-          setSelectedAccountContext(defaultAccount.value);
-          switchContext(newContext);
-          console.log("Set default account context:", newContext);
-        }
-      } else {
-        // Restore existing context
+      // If there's an existing context, find and select it
+      if (existingContext.accountId) {
         const existingOption = dropdownOptions.find(
           (option) =>
             option.value.accountId === existingContext.accountId &&
-            option.value.customerId === existingContext.customerId
+            option.value.customerId === existingContext.customerId &&
+            option.value.organizationId === existingContext.organizationId
         );
-
         if (existingOption) {
           setSelectedAccountContext(existingOption.value);
-          console.log(
-            "Restored existing account context:",
-            existingOption.value
-          );
+        }
+      } else {
+        // If no existing context, find and select the default account
+        const defaultOption = dropdownOptions.find(
+          (option) => option.value.defaultAccount === true
+        );
+        if (defaultOption) {
+          setSelectedAccountContext(defaultOption.value);
         }
       }
     } catch (error) {
       console.error("Error fetching account context data:", error);
+      setDefaultContextAlert({
+        visible: true,
+        type: "error",
+        message: "Failed to load account context data. Please try again.",
+      });
     } finally {
       setAccountContextLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchProfileData();
-  }, []);
+  const handleAccountContextChange = (selectedKey) => {
+    const selectedOption = accountContextData.find(
+      (option) => option.key === selectedKey
+    );
+    if (selectedOption) {
+      setSelectedAccountContext(selectedOption.value);
+      // Update session storage with the new context
+      sessionStorage.setItem(
+        "accountContext",
+        JSON.stringify(selectedOption.value)
+      );
+      // Call the context switch function
+      switchContext(selectedOption.value);
+    }
+  };
 
-  // Fetch account context data on component mount
+  const handleSetDefaultContext = async () => {
+    if (!selectedAccountContext) {
+      setDefaultContextAlert({
+        visible: true,
+        type: "warning",
+        message: "Please select an account context first",
+      });
+      return;
+    }
+
+    try {
+      const profileId = getProfileIdFromSession();
+      if (!profileId) {
+        throw new Error("No profile ID found");
+      }
+
+      await apiCall({
+        method: "post",
+        url: `/api/profile/${profileId}/defaultContext`,
+        data: selectedAccountContext,
+      });
+
+      setDefaultContextAlert({
+        visible: true,
+        type: "success",
+        message: "Default account context updated successfully",
+      });
+
+      // Refresh the account context data
+      await fetchAccountContextData();
+    } catch (error) {
+      console.error("Error setting default context:", error);
+      setDefaultContextAlert({
+        visible: true,
+        type: "error",
+        message: "Failed to set default account context. Please try again.",
+      });
+    }
+  };
+
+  // Add useEffect to fetch account context data on component mount
   useEffect(() => {
     fetchAccountContextData();
   }, []);
-
-  // Preselect the organization and cloud accounts when the component mounts
-  useEffect(() => {
-    form.setFieldsValue({
-      organizations: selectedOrganization ? [selectedOrganization] : [],
-      cloudAccounts: selectedCloudAccounts || [],
-    });
-  }, [selectedOrganization, selectedCloudAccounts, form]);
 
   useEffect(() => {
     if (selectedData) {
@@ -529,20 +559,11 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
   };
 
   const handleUpdate = async (values) => {
-    console.log("@@Updating profile with values:", values);
-    console.log("@@selectedProfileId ==", selectedProfileId);
-    console.log("@@selectedData.ProfileId ==", selectedData.ProfileId);
-
-    if (!selectedData || !selectedProfileId) {
-      setUpdateAlert({
-        message: "No profile selected for update",
-        type: "error",
-        visible: true,
-      });
-      return;
-    }
-
     try {
+      if (!selectedData?.profileId) {
+        throw new Error("No profile selected for update");
+      }
+
       // Show loading message
       setUpdateAlert({
         message: "Updating profile...",
@@ -552,167 +573,70 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
 
       // Only include fields that we want to update
       const updateData = {
-        Id: selectedData.profileId,
-        FirstName: values.firstName,
-        LastName: values.lastName,
-        AccessLevel: values.accessLevel,
-        Email: values.email, // Email is required by the model
-        // Only include IsConfirmed if it's specifically changed via the switch
-        ...(values.active !== undefined && { IsConfirmed: values.active }),
+        id: selectedData.profileId,
+        firstName: values.firstName,
+        lastName: values.lastName,
+        email: selectedData.email, // Keep existing email
+        accessLevel: selectedData.accessLevel, // Keep existing access level
+        isConfirmed: selectedData.isConfirmed, // Keep existing confirmation status
       };
 
-      // Validate required fields for update
-      if (
-        !updateData.FirstName ||
-        !updateData.LastName ||
-        !updateData.AccessLevel ||
-        !updateData.Email
-      ) {
-        throw new Error("Missing required fields");
-      }
-
-      // Log the exact data being sent
-      console.log("Sending update request with data:", updateData);
-
-      // Update profile
-      await apiCall({
+      const response = await apiCall({
         method: "put",
         url: `/api/Profile/${selectedData.profileId}`,
         data: updateData,
-        headers: {
-          "Content-Type": "application/json",
-        },
       });
 
-      console.log("##selectedData.profileId =", selectedData.profileId);
-      // Get updated profile data
-      console.log("##selectedProfileId ==", selectedProfileId);
-      const profileResponse = await apiCall({
-        method: "get",
-        url: `/api/Profile/${selectedData.profileId}`,
-      });
-      // Restructure the response to change Id to profileId
-      const updatedProfile = {
-        ...profileResponse,
-        profileId: profileResponse.id,
-      };
-      delete updatedProfile.id;
-
-      // Update states with restructured data
-      setSelectedData(updatedProfile);
-
-      console.log("Updated profile data:", JSON.stringify(profileResponse));
-      setSelectedProfileId(profileResponse.id);
-
-      // Get updated organization hierarchy
-      const orgResponse = await apiCall({
-        method: "get",
-        url: `/api/Profile/${selectedProfileId}/organizations`,
-      });
-
-      setOrgCustAccountForProfile(orgResponse);
-      console.log("##Updated organization hierarchy:", orgResponse);
-
-      // Update form with new profile data
-      form.setFieldsValue({
-        firstName: profileResponse.firstName,
-        lastName: profileResponse.lastName,
-        email: profileResponse.email,
-        //permission: profileResponse.permission,
-        //organizations: profileResponse.orgId,
-        //customers: profileResponse.custId,
-        //cloudAccounts: profileResponse.cloudId,
-        accessLevel: profileResponse.accessLevel,
-        active: profileResponse.isConfirmed,
-      });
-
-      // Show success message
-      setUpdateAlert({
-        message: "Profile updated successfully",
-        type: "success",
-        visible: true,
-      });
-
-      // Clear alert after 3 seconds
-      // setTimeout(() => {
-      //   setUpdateAlert({
-      //     visible: false,
-      //     type: "",
-      //     message: "",
-      //   });
-      // }, 3000);
+      if (response) {
+        setUpdateAlert({
+          visible: true,
+          type: "success",
+          message: "Profile updated successfully",
+        });
+        await fetchProfileData(); // Refresh profile data
+      }
     } catch (error) {
       console.error("Profile update error:", error);
       setUpdateAlert({
-        message:
-          "Error updating profile: " +
-          (error.response?.data?.message || error.message || error),
-        type: "error",
         visible: true,
+        type: "error",
+        message:
+          "Failed to update profile: " + (error.message || "Unknown error"),
       });
     }
   };
 
   const handleCreate = async (values) => {
     try {
-      // Show loading message
-      setCreateAlert({
-        message: "Creating profile...",
-        type: "info",
-        visible: true,
-      });
-
-      // Prepare the create data
-      const createData = {
-        firstName: values.firstName,
-        lastName: values.lastName,
-        email: values.email,
-        accessLevel: values.accessLevel,
-        password: values.tempPassword,
-        isConfirmed: false,
-      };
-
-      // Validate required fields
-      if (
-        !createData.firstName ||
-        !createData.lastName ||
-        !createData.accessLevel ||
-        !createData.email ||
-        !createData.password
-      ) {
-        throw new Error("Missing required fields");
+      const profileId = getProfileIdFromSession();
+      if (!profileId) {
+        throw new Error("No profile ID found");
       }
 
-      // Create profile
       const response = await apiCall({
         method: "post",
-        url: "http://localhost:5000/api/profile",
-        data: createData,
-        headers: {
-          "Content-Type": "application/json",
+        url: "/api/Profile",
+        data: {
+          ...values,
+          isConfirmed: true,
         },
       });
 
-      // Show success message
-      setCreateAlert({
-        message: "Profile created successfully",
-        type: "success",
-        visible: true,
-      });
-
-      // Reset form
-      form.resetFields();
-
-      // Reset form
-      form.resetFields();
+      if (response) {
+        setCreateAlert({
+          visible: true,
+          type: "success",
+          message: "Profile created successfully",
+        });
+        form.resetFields();
+        await fetchProfileData();
+      }
     } catch (error) {
-      console.error("Profile creation error:", error);
       setCreateAlert({
-        message:
-          "Error creating profile: " +
-          (error.response?.data?.message || error.message || error),
-        type: "error",
         visible: true,
+        type: "error",
+        message:
+          "Failed to create profile: " + (error.message || "Unknown error"),
       });
     }
   };
@@ -812,27 +736,15 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
         throw new Error("Failed to get API key");
       }
 
-      // Make the API call to update password
-      const response = await fetch(
-        "http://localhost:5000/api/Profile/update-password",
+      // Make the API call to update password using axiosInstance
+      const response = await axiosInstance.post(
+        "/api/Profile/update-password",
         {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Api-Key": apiKey,
-          },
-          body: JSON.stringify({
-            email: profileData.email,
-            currentPassword: values.currentPassword,
-            newPassword: values.newPassword,
-          }),
+          email: profileData.email,
+          currentPassword: values.currentPassword,
+          newPassword: values.newPassword,
         }
       );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to update password");
-      }
 
       // Show success alert and clear form
       setPasswordAlert({
@@ -849,7 +761,10 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
       });
     } catch (error) {
       setPasswordAlert({
-        message: error.message || "Failed to update password",
+        message:
+          error.response?.data?.message ||
+          error.message ||
+          "Failed to update password",
         type: "error",
         visible: true,
       });
@@ -857,12 +772,15 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
   };
 
   const onFinish = async (values) => {
-    if (isUpdate && selectedData) {
-      await handleUpdate(values);
-    } else {
-      await handleCreate(values);
+    try {
+      if (isUpdate) {
+        await handleUpdate(values);
+      } else {
+        await handleCreate(values);
+      }
+    } catch (error) {
+      console.error("Error in form submission:", error);
     }
-    console.log("Record:", values);
   };
 
   const columns = [
@@ -961,151 +879,21 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
     );
   };
 
-  // Handle account context selection
-  const handleAccountContextChange = (value) => {
-    const selectedAccount = accountContextData.find(
-      (option) => option.key === value
-    );
+  // Add useEffect to fetch profile data on component mount
+  useEffect(() => {
+    fetchProfileData();
+  }, []);
 
-    if (selectedAccount) {
-      setSelectedAccountContext(selectedAccount.value);
-
-      // Update global context
-      const profileData = JSON.parse(
-        sessionStorage.getItem("profileData") || "{}"
-      );
-      const accessLevel = sessionStorage.getItem("accessLevel");
-
-      const newContext = {
-        profileId: profileData.profileId,
-        firstName: profileData.firstName,
-        lastName: profileData.lastName,
-        email: profileData.email,
-        accessLevel: accessLevel,
-        organizationId: selectedAccount.value.organizationId,
-        organizationName: selectedAccount.value.organizationName,
-        customerId: selectedAccount.value.customerId,
-        customerName: selectedAccount.value.customerName,
-        accountId: selectedAccount.value.accountId,
-        accountName: selectedAccount.value.accountName,
-        cloudType: selectedAccount.value.cloudType,
-        permissions: selectedAccount.value.role || "viewer",
-      };
-
-      switchContext(newContext);
-      sessionStorage.setItem(
-        "accountContext",
-        JSON.stringify(selectedAccount.value)
-      );
-      console.log("Updated account context:", newContext);
-    }
-  };
-
-  // New method to update default account context
-  const handleSetDefaultContext = async () => {
-    if (!selectedAccountContext) {
-      setDefaultContextAlert({
-        visible: true,
-        type: "error",
-        message: "Please select an account context first",
-      });
-      return;
-    }
-
-    try {
-      const profileId = getProfileIdFromSession();
-      console.log("@@ Setting default context for profileId:", profileId);
-      console.log("@@ Selected context:", selectedAccountContext);
-
-      // Get all LOVs for this profile
-      const lovResponse = await apiCall({
-        method: "get",
-        url: `/api/LOV/profile/${profileId}`,
-      });
-      console.log("@@ All LOVs for profile:", lovResponse);
-
-      // Filter to find DEFAULT ACCOUNT LOV
-      const existingLov = lovResponse
-        ? lovResponse.find(
-            (lov) =>
-              lov.description === "DEFAULT ACCOUNT" &&
-              lov.profileId === parseInt(profileId)
-          )
-        : null;
-      console.log("@@ Found DEFAULT ACCOUNT LOV:", existingLov);
-
-      if (!existingLov) {
-        // Create new LOV record with "DEFAULT ACCOUNT"
-        console.log("@@ Creating new LOV record");
-        const newLovData = {
-          description: "DEFAULT ACCOUNT",
-          profileId: parseInt(profileId),
-          organizationId: selectedAccountContext.organizationId,
-          customerId: selectedAccountContext.customerId,
-          accountId: selectedAccountContext.accountId,
-          isActive: true,
-        };
-        console.log("@@ New LOV data:", newLovData);
-
-        const newLovResponse = await apiCall({
-          method: "POST",
-          url: "/api/LOV",
-          data: newLovData,
-        });
-        console.log("@@ New LOV created:", newLovResponse);
-      } else {
-        // Update existing LOV
-        console.log("@@ Updating existing LOV:", existingLov.id);
-        const updatedLovData = {
-          ...existingLov,
-          organizationId: selectedAccountContext.organizationId,
-          customerId: selectedAccountContext.customerId,
-          accountId: selectedAccountContext.accountId,
-        };
-        console.log("@@ Updating LOV with data:", updatedLovData);
-
-        const updateResponse = await apiCall({
-          method: "put",
-          url: `/api/LOV/${existingLov.id}`,
-          data: updatedLovData,
-        });
-        console.log("@@ LOV update response:", updateResponse);
-      }
-
-      setDefaultContextAlert({
-        visible: true,
-        type: "success",
-        message: "Default account context updated successfully",
-      });
-
-      // Refresh the account context data to reflect the new default
-      await fetchAccountContextData();
-
-      // Keep the current selection
-      const currentSelection = accountContextData.find(
-        (option) =>
-          option.value.organizationId ===
-            selectedAccountContext.organizationId &&
-          option.value.customerId === selectedAccountContext.customerId &&
-          option.value.accountId === selectedAccountContext.accountId
-      );
-      if (currentSelection) {
-        setSelectedAccountContext(currentSelection.value);
-      }
-    } catch (error) {
-      console.error("Error updating default account context:", error);
-      setDefaultContextAlert({
-        visible: true,
-        type: "error",
-        message:
-          "Failed to update default account context: " +
-          (error.message || "Unknown error"),
-      });
-    }
-  };
+  // Add useEffect to fetch account context data on component mount
+  useEffect(() => {
+    fetchAccountContextData();
+  }, []);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+    <div
+      className={`profile-container ${darkMode ? "dark" : ""}`}
+      style={{ padding: "24px", marginTop: "175px" }}
+    >
       {/* Show loading states */}
       {(profileLoading || orgLoading) && (
         <Alert
@@ -1127,428 +915,376 @@ const Profile = ({ selectedOrganization, selectedCloudAccounts }) => {
         />
       )}
 
-      {/* Change Account Context Section */}
-      <div
-        style={{
-          background: darkMode ? "#1e1e1e" : "#fff",
-          color: darkMode ? "#fff" : "#000",
-          borderRadius: "8px",
-          padding: "24px",
-          boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)",
-        }}
-      >
-        <div style={{ padding: "24px" }}>
-          <h2>Change Account Context</h2>
-          <div
-            style={{
-              background: darkMode ? "#29303d" : "#fff",
-              borderRadius: "8px",
-              padding: "24px",
-              marginTop: "16px",
-              border: darkMode ? "1px solid #434a56" : "1px solid #f0f0f0",
-            }}
-          >
-            <div style={{ marginBottom: 24 }}>
-              <Space direction="vertical" style={{ width: "100%" }}>
-                {defaultContextAlert.visible && (
-                  <Alert
-                    message={defaultContextAlert.message}
-                    type={defaultContextAlert.type}
-                    showIcon
-                    closable
-                    onClose={() => {
-                      setDefaultContextAlert({
-                        visible: false,
-                        type: "",
-                        message: "",
-                      });
-                    }}
-                  />
-                )}
-                <div
-                  style={{ display: "flex", alignItems: "center", gap: "8px" }}
-                >
-                  <Select
-                    style={{ width: "100%" }}
-                    placeholder="Change Account Context"
-                    onChange={handleAccountContextChange}
-                    value={
-                      selectedAccountContext
-                        ? `${selectedAccountContext.customerName} - ${selectedAccountContext.accountName} - ${selectedAccountContext.cloudType}`
-                        : undefined
-                    }
-                    loading={accountContextLoading}
-                    size="large"
-                    dropdownStyle={{
+      <div className="account-context-section">
+        <h2 style={{ marginBottom: "16px" }}>Change Account Context</h2>
+        <Row gutter={[16, 16]}>
+          <Col span={24}>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <Select
+                style={{ width: "100%" }}
+                placeholder="Select Account Context"
+                onChange={handleAccountContextChange}
+                loading={accountContextLoading}
+                value={
+                  selectedAccountContext
+                    ? `${selectedAccountContext.customerName} -- ${selectedAccountContext.accountName} - ${selectedAccountContext.cloudType}`
+                    : undefined
+                }
+                disabled={accountContextLoading}
+              >
+                {accountContextData.map((option) => (
+                  <Option
+                    key={option.key}
+                    value={option.key}
+                    style={{
                       backgroundColor: darkMode ? "#141414" : "#ffffff",
                       color: darkMode ? "#ffffff" : "#000000",
                     }}
-                    popupClassName={darkMode ? "dark-select-dropdown" : ""}
                   >
-                    {accountContextData.map((option) => (
-                      <Option
-                        key={option.key}
-                        value={option.key}
-                        style={{
-                          backgroundColor: darkMode ? "#141414" : "#ffffff",
-                          color: darkMode ? "#ffffff" : "#000000",
-                        }}
-                        className={darkMode ? "dark-select-option" : ""}
-                      >
-                        {option.label}
-                      </Option>
-                    ))}
-                  </Select>
-                  <PlusOutlined
-                    onClick={handleSetDefaultContext}
-                    style={{
-                      fontSize: "18px",
-                      color: darkMode ? "#ffffff" : "#000000",
-                      cursor: "pointer",
-                      padding: "4px",
-                      transition: "color 0.3s",
-                    }}
-                    title="Set as Default Account Context"
-                  />
-                </div>
-              </Space>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* My Profile Section */}
-      <div
-        style={{
-          background: darkMode ? "#1e1e1e" : "#fff",
-          color: darkMode ? "#fff" : "#000",
-          borderRadius: "8px",
-          padding: "24px",
-          boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)",
-        }}
-      >
-        <div style={{ padding: "24px" }}>
-          <h2>
-            Welcome,{" "}
-            {selectedData?.firstName + " " + selectedData?.lastName || "User"}{" "}
-          </h2>
-          {(createAlert.visible || updateAlert.visible) && (
-            <Alert
-              message={
-                createAlert.visible ? createAlert.message : updateAlert.message
-              }
-              type={createAlert.visible ? createAlert.type : updateAlert.type}
-              showIcon
-              style={{
-                marginBottom: 16,
-                background: darkMode ? "#29303d" : undefined,
-                color: darkMode ? "#fff" : undefined,
-                border: darkMode ? "1px solid #434a56" : undefined,
-              }}
-            />
-          )}
-
-          <div
-            style={{
-              background: darkMode ? "#29303d" : "#fff",
-              borderRadius: "8px",
-              padding: "24px",
-              marginBottom: "24px",
-              border: darkMode ? "1px solid #434a56" : "1px solid #f0f0f0",
-            }}
-          >
-            <Form form={form} layout="vertical" onFinish={onFinish}>
-              <div
-                style={{ display: "flex", gap: "16px", marginBottom: "16px" }}
-              >
-                <Form.Item
-                  name="firstName"
-                  label="First Name"
-                  rules={[{ required: true }]}
-                  style={{ flex: 1, marginBottom: 0 }}
-                >
-                  <Input size="large" />
-                </Form.Item>
-
-                <Form.Item
-                  name="lastName"
-                  label="Last Name"
-                  rules={[{ required: true }]}
-                  style={{ flex: 1, marginBottom: 0 }}
-                >
-                  <Input size="large" />
-                </Form.Item>
-              </div>
-
-              <div
-                style={{ display: "flex", gap: "16px", marginBottom: "16px" }}
-              >
-                <Form.Item
-                  name="email"
-                  label="Email"
-                  rules={[{ required: true, type: "email" }]}
-                  style={{ flex: 1, marginBottom: 0 }}
-                >
-                  <Input size="large" disabled />
-                </Form.Item>
-
-                <Form.Item
-                  name="accessLevel"
-                  label="Access Level"
-                  rules={[{ required: true }]}
-                  style={{ flex: 1, marginBottom: 0 }}
-                >
-                  <Select
-                    size="large"
-                    placeholder="Select Access Level"
-                    disabled
-                    dropdownStyle={{
-                      backgroundColor: darkMode ? "#333" : "#fff",
-                      color: darkMode ? "#fff" : "#000",
-                    }}
-                  >
-                    <Option value="root">Root</Option>
-                    <Option value="admin">Admin</Option>
-                    <Option value="general">General</Option>
-                  </Select>
-                </Form.Item>
-              </div>
-
-              {isUpdate && (
-                <div style={{ display: "flex", marginBottom: "16px" }}>
-                  <Form.Item
-                    name="active"
-                    label="Account Status"
-                    valuePropName="checked"
-                    style={{ flex: 1, marginBottom: 0 }}
-                  >
-                    <Switch
-                      checkedChildren="Active"
-                      unCheckedChildren="Inactive"
-                    />
-                  </Form.Item>
-                </div>
-              )}
-
-              {!isUpdate && (
-                <div
-                  style={{ display: "flex", gap: "16px", marginBottom: "16px" }}
-                >
-                  <Form.Item
-                    name="tempPassword"
-                    label="Temporary Password"
-                    rules={[{ required: true }]}
-                    style={{ flex: 1, marginBottom: 0 }}
-                  >
-                    <Input.Password size="large" />
-                  </Form.Item>
-                </div>
-              )}
-
-              <div
+                    {option.label}
+                  </Option>
+                ))}
+              </Select>
+              <Button
+                icon={<PlusOutlined />}
+                onClick={handleSetDefaultContext}
+                title="Set as Default Account Context"
                 style={{
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  marginTop: "24px",
-                  gap: "8px",
+                  backgroundColor: darkMode ? "#141414" : "#ffffff",
+                  borderColor: darkMode ? "#303030" : undefined,
+                  color: darkMode ? "#ffffff" : undefined,
                 }}
-              >
-                <Button type="primary" htmlType="submit" size="large">
-                  Save
-                </Button>
-              </div>
-            </Form>
-          </div>
-
-          {submittedData.length > 0 && (
-            <div ref={tableRef} tabIndex={-1}>
-              {showAlert && (
-                <Alert
-                  message={alertMessage}
-                  type="success"
-                  showIcon
-                  style={{
-                    marginBottom: 16,
-                    backgroundColor: darkMode ? "#2a2a2a" : "#fff",
-                    color: darkMode ? "#fff" : "#000",
-                    border: darkMode ? "1px solid #444" : undefined,
-                  }}
-                />
-              )}
-              <Table
-                dataSource={submittedData.map((item, index) => ({
-                  ...item,
-                  key: index,
-                }))}
-                columns={columns}
               />
             </div>
-          )}
-        </div>
+          </Col>
+        </Row>
+        {defaultContextAlert.visible && (
+          <Alert
+            message={defaultContextAlert.message}
+            type={defaultContextAlert.type}
+            showIcon
+            closable
+            onClose={() =>
+              setDefaultContextAlert({ ...defaultContextAlert, visible: false })
+            }
+            style={{ marginTop: "10px" }}
+          />
+        )}
       </div>
 
-      <div
-        style={{
-          background: darkMode ? "#1e1e1e" : "#fff",
-          color: darkMode ? "#fff" : "#000",
-          borderRadius: "8px",
-          padding: "24px",
-          boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)",
-        }}
+      <Tabs
+        type="card"
+        activeKey={activeTab}
+        onChange={(key) => setActiveTab(key)}
+        className={`profile-tabs ${darkMode ? "dark" : ""}`}
+        style={{ marginTop: "24px" }}
       >
-        <div style={{ padding: "24px" }}>
-          <h2>Change Password</h2>
-          {passwordAlert.visible && (
-            <Alert
-              message={passwordAlert.message}
-              type={passwordAlert.type}
-              showIcon
-              style={{
-                marginBottom: 16,
-                background: darkMode ? "#29303d" : undefined,
-                color: darkMode ? "#fff" : undefined,
-                border: darkMode ? "1px solid #434a56" : undefined,
-              }}
-            />
-          )}
+        <Tabs.TabPane tab="My Profile" key="myProfile">
+          <div className="welcome-section">
+            <h2>
+              Welcome, {selectedData?.firstName} {selectedData?.lastName}!
+            </h2>
 
-          <div
-            style={{
-              background: darkMode ? "#29303d" : "#fff",
-              borderRadius: "8px",
-              padding: "24px",
-              marginBottom: "24px",
-              border: darkMode ? "1px solid #434a56" : "1px solid #f0f0f0",
-            }}
-          >
-            <Form
-              form={passwordForm}
-              layout="vertical"
-              onFinish={handlePasswordChange}
+            {/* Profile Information Section */}
+            <div className="profile-info-section">
+              <div
+                style={{
+                  background: darkMode ? "#1f1f1f" : "#ffffff",
+                  padding: "24px",
+                  borderRadius: "8px",
+                  border: `1px solid ${darkMode ? "#303030" : "#d9d9d9"}`,
+                  marginTop: "16px",
+                }}
+              >
+                <h3 style={{ marginBottom: "16px" }}>Profile Information</h3>
+                {/* Profile Update Alert */}
+                {updateAlert.visible && (
+                  <Alert
+                    message={updateAlert.message}
+                    type={updateAlert.type}
+                    showIcon
+                    style={{
+                      marginBottom: "16px",
+                      backgroundColor: darkMode ? "#1f1f1f" : undefined,
+                      border: darkMode ? "1px solid #303030" : undefined,
+                    }}
+                  />
+                )}
+                <Form
+                  form={form}
+                  layout="vertical"
+                  onFinish={handleUpdate}
+                  initialValues={{
+                    firstName: selectedData?.firstName,
+                    lastName: selectedData?.lastName,
+                    email: selectedData?.email,
+                    accessLevel: selectedData?.accessLevel,
+                    active: selectedData?.isConfirmed,
+                  }}
+                >
+                  <Row gutter={[16, 16]}>
+                    <Col span={12}>
+                      <Form.Item
+                        label="First Name"
+                        name="firstName"
+                        rules={[
+                          {
+                            required: true,
+                            message: "Please enter your first name",
+                          },
+                        ]}
+                      >
+                        <Input />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item
+                        label="Last Name"
+                        name="lastName"
+                        rules={[
+                          {
+                            required: true,
+                            message: "Please enter your last name",
+                          },
+                        ]}
+                      >
+                        <Input />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                  <Row gutter={[16, 16]}>
+                    <Col span={12}>
+                      <Form.Item label="Email" name="email">
+                        <Input disabled />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item label="Access Level" name="accessLevel">
+                        <Input disabled />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                  <Row gutter={[16, 16]}>
+                    <Col span={12}>
+                      <Form.Item
+                        label="Account Status"
+                        name="active"
+                        valuePropName="checked"
+                      >
+                        <Switch
+                          disabled
+                          style={{
+                            backgroundColor: "#06923E",
+                          }}
+                        />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                  <Row>
+                    <Col
+                      span={24}
+                      style={{
+                        display: "flex",
+                        justifyContent: "flex-end",
+                        marginTop: "16px",
+                      }}
+                    >
+                      <Button
+                        type="primary"
+                        htmlType="submit"
+                        size="large"
+                        style={{
+                          backgroundColor: "#06923E",
+                          borderColor: "#06923E",
+                          color: "white",
+                        }}
+                      >
+                        Save
+                      </Button>
+                    </Col>
+                  </Row>
+                </Form>
+              </div>
+            </div>
+
+            {/* Change Password Section */}
+            <div
+              className="change-password-section"
+              style={{ marginTop: "24px" }}
             >
               <div
                 style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "16px",
+                  background: darkMode ? "#1f1f1f" : "#ffffff",
+                  padding: "24px",
+                  borderRadius: "8px",
+                  border: `1px solid ${darkMode ? "#303030" : "#d9d9d9"}`,
                 }}
               >
-                <Form.Item
-                  name="currentPassword"
-                  label="Current Password"
-                  rules={[
-                    {
-                      required: true,
-                      message: "Please enter your current password",
-                    },
-                  ]}
-                >
-                  <Input.Password size="large" />
-                </Form.Item>
-
-                <Form.Item
-                  name="newPassword"
-                  label="New Password"
-                  rules={[
-                    {
-                      required: true,
-                      message: "Please enter your new password",
-                    },
-                    {
-                      validator: (_, value) => {
-                        if (!value) return Promise.resolve();
-                        const errors = validatePassword(value);
-                        return errors.length === 0
-                          ? Promise.resolve()
-                          : Promise.reject(errors.join(", "));
-                      },
-                    },
-                  ]}
-                >
-                  <Input.Password size="large" />
-                </Form.Item>
-
-                <Form.Item
-                  name="confirmPassword"
-                  label="Confirm Password"
-                  dependencies={["newPassword"]}
-                  rules={[
-                    {
-                      required: true,
-                      message: "Please confirm your new password",
-                    },
-                    ({ getFieldValue }) => ({
-                      validator(_, value) {
-                        if (!value || getFieldValue("newPassword") === value) {
-                          return Promise.resolve();
-                        }
-                        return Promise.reject(
-                          new Error("The two passwords do not match")
-                        );
-                      },
-                    }),
-                  ]}
-                >
-                  <Input.Password size="large" />
-                </Form.Item>
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  marginTop: "24px",
-                  gap: "8px",
-                }}
-              >
-                <Button type="primary" htmlType="submit" size="large">
-                  Change Password
-                </Button>
-              </div>
-            </Form>
-          </div>
-        </div>
-      </div>
-
-      {orgCustAccountForProfile && (
-        <div
-          style={{
-            background: darkMode ? "#1e1e1e" : "#fff",
-            color: darkMode ? "#fff" : "#000",
-            borderRadius: "8px",
-            padding: "24px",
-            boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)",
-          }}
-        >
-          <h2>My Organizations, Customers, Accounts - Permissions</h2>
-          <Table
-            dataSource={orgCustAccountForProfile.organizations}
-            columns={orgHierarchyColumns}
-            expandable={{
-              expandedRowRender: (record) => {
-                return (
-                  <Table
-                    columns={customerColumns}
-                    dataSource={record.customers}
-                    expandable={{
-                      expandedRowRender: expandedRowRender,
-                      rowExpandable: (record) => record.accounts?.length > 0,
-                      expandRowByClick: true,
+                <h3 style={{ marginBottom: "16px" }}>Change Password</h3>
+                {/* Password Change Alert */}
+                {passwordAlert.visible && (
+                  <Alert
+                    message={passwordAlert.message}
+                    type={passwordAlert.type}
+                    showIcon
+                    style={{
+                      marginBottom: "16px",
+                      backgroundColor: darkMode ? "#1f1f1f" : undefined,
+                      border: darkMode ? "1px solid #303030" : undefined,
                     }}
-                    pagination={false}
-                    size="small"
-                    rowKey={(record) => record.customerId}
                   />
-                );
-              },
-              rowExpandable: (record) => record.customers?.length > 0,
-              expandRowByClick: true,
-            }}
-            pagination={false}
-            rowKey={(record) => record.orgId}
-          />
-        </div>
-      )}
+                )}
+                <Form
+                  form={passwordForm}
+                  layout="vertical"
+                  onFinish={handlePasswordChange}
+                >
+                  <Form.Item
+                    name="currentPassword"
+                    label="Current Password"
+                    rules={[
+                      {
+                        required: true,
+                        message: "Please enter your current password",
+                      },
+                    ]}
+                  >
+                    <Input.Password size="large" />
+                  </Form.Item>
+
+                  <Form.Item
+                    name="newPassword"
+                    label="New Password"
+                    rules={[
+                      {
+                        required: true,
+                        message: "Please enter your new password",
+                      },
+                      {
+                        validator: (_, value) => {
+                          if (!value) return Promise.resolve();
+                          const errors = validatePassword(value);
+                          return errors.length === 0
+                            ? Promise.resolve()
+                            : Promise.reject(errors.join(", "));
+                        },
+                      },
+                    ]}
+                  >
+                    <Input.Password size="large" />
+                  </Form.Item>
+
+                  <Form.Item
+                    name="confirmPassword"
+                    label="Confirm Password"
+                    dependencies={["newPassword"]}
+                    rules={[
+                      {
+                        required: true,
+                        message: "Please confirm your new password",
+                      },
+                      ({ getFieldValue }) => ({
+                        validator(_, value) {
+                          if (
+                            !value ||
+                            getFieldValue("newPassword") === value
+                          ) {
+                            return Promise.resolve();
+                          }
+                          return Promise.reject(
+                            new Error("The two passwords do not match")
+                          );
+                        },
+                      }),
+                    ]}
+                  >
+                    <Input.Password size="large" />
+                  </Form.Item>
+
+                  <Form.Item style={{ marginBottom: 0, textAlign: "right" }}>
+                    <Button
+                      type="primary"
+                      htmlType="submit"
+                      size="large"
+                      style={{
+                        backgroundColor: "#06923E",
+                        borderColor: "#06923E",
+                        color: "white",
+                      }}
+                    >
+                      Change Password
+                    </Button>
+                  </Form.Item>
+                </Form>
+              </div>
+            </div>
+          </div>
+        </Tabs.TabPane>
+
+        <Tabs.TabPane tab="My Access" key="myAccess">
+          <div style={{ padding: "20px" }}>
+            <h2>Access Management</h2>
+            {/* Organizations, Customers, Accounts Section */}
+            <div
+              style={{
+                background: darkMode ? "#1f1f1f" : "#ffffff",
+                padding: "24px",
+                borderRadius: "8px",
+                border: `1px solid ${darkMode ? "#303030" : "#d9d9d9"}`,
+                marginTop: "16px",
+              }}
+            >
+              <h3 style={{ marginBottom: "16px" }}>
+                My Organizations, Customers, Accounts - Permissions
+              </h3>
+              {orgCustAccountForProfile && (
+                <Table
+                  dataSource={orgCustAccountForProfile.organizations}
+                  columns={orgHierarchyColumns}
+                  expandable={{
+                    expandedRowRender: (record) => {
+                      return (
+                        <Table
+                          columns={customerColumns}
+                          dataSource={record.customers}
+                          expandable={{
+                            expandedRowRender: expandedRowRender,
+                            rowExpandable: (record) =>
+                              record.accounts?.length > 0,
+                            expandRowByClick: true,
+                          }}
+                          pagination={false}
+                          size="small"
+                          rowKey={(record) => record.customerId}
+                          style={{
+                            backgroundColor: darkMode ? "#141414" : "#ffffff",
+                          }}
+                        />
+                      );
+                    },
+                    rowExpandable: (record) => record.customers?.length > 0,
+                    expandRowByClick: true,
+                  }}
+                  pagination={false}
+                  rowKey={(record) => record.orgId}
+                  style={{
+                    backgroundColor: darkMode ? "#141414" : "#ffffff",
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        </Tabs.TabPane>
+
+        <Tabs.TabPane tab="My Dashboard" key="myDashboard">
+          <div style={{ padding: "20px" }}>
+            <h2>Dashboard</h2>
+            <p>Dashboard content will be implemented here.</p>
+          </div>
+        </Tabs.TabPane>
+
+        <Tabs.TabPane tab="My Settings" key="mySettings"></Tabs.TabPane>
+      </Tabs>
     </div>
   );
 };

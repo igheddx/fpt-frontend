@@ -490,7 +490,7 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
 
       const response = await apiCall({
         method: "post",
-        url: "http://localhost:5000/api/profile",
+        url: "/api/profile",
         data: createData,
         headers: {
           "Content-Type": "application/json",
@@ -841,13 +841,11 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
                   )}
                 </div>
                 <div style={{ display: "flex", gap: "8px" }}>
-                  <Button type="primary" htmlType="submit" size="large">
-                    {isUpdate ? "Update" : "Save"}
-                  </Button>
                   {isUpdate && (
                     <Button
+                      color="default"
+                      variant="outlined"
                       size="large"
-                      style={{ backgroundColor: "#ff8c00" }}
                       onClick={() => {
                         setSelectedData(null);
                         setIsUpdate(false);
@@ -874,6 +872,18 @@ const MyProfile = ({ selectedOrganization, selectedCloudAccounts }) => {
                       Exit Update
                     </Button>
                   )}
+                  <Button
+                    type="primary"
+                    htmlType="submit"
+                    size="large"
+                    style={{
+                      backgroundColor: "#06923E",
+                      borderColor: "#06923E",
+                      color: "white",
+                    }}
+                  >
+                    {isUpdate ? "Update" : "Save"}
+                  </Button>
                 </div>
               </div>
             </Form>

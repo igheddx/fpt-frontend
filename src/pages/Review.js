@@ -8,6 +8,7 @@ import {
   Space,
   message,
   Typography,
+  Tag,
 } from "antd";
 import {
   PlusOutlined,
@@ -711,13 +712,79 @@ const Review = () => {
       title: "Flow Status",
       dataIndex: "status",
       key: "status",
-      render: (text) => text || "Pending",
+      render: (status) => {
+        let color;
+        const displayStatus = status || "Pending";
+        switch (displayStatus.toLowerCase()) {
+          case "submitted":
+            color = darkMode ? "#1668dc" : "blue";
+            break;
+          case "reject":
+            color = darkMode ? "#dc4446" : "red";
+            break;
+          case "complete":
+            color = darkMode ? "#49aa19" : "green";
+            break;
+          case "pending":
+            color = darkMode ? "#d89614" : "orange";
+            break;
+          default:
+            color = darkMode ? "#666666" : "default";
+        }
+        return (
+          <Tag
+            color={color}
+            style={{
+              minWidth: "90px",
+              textAlign: "center",
+              backgroundColor: darkMode ? `${color}22` : undefined,
+              border: darkMode ? `1px solid ${color}` : undefined,
+              color: darkMode ? color : undefined,
+            }}
+          >
+            {displayStatus}
+          </Tag>
+        );
+      },
     },
     {
       title: "Approval Status",
       dataIndex: "approverStatus",
       key: "approverStatus",
-      render: (status) => status || "Pending",
+      render: (status) => {
+        let color;
+        const displayStatus = status || "Pending";
+        switch (displayStatus.toLowerCase()) {
+          case "submitted":
+            color = darkMode ? "#1668dc" : "blue";
+            break;
+          case "reject":
+            color = darkMode ? "#dc4446" : "red";
+            break;
+          case "complete":
+            color = darkMode ? "#49aa19" : "green";
+            break;
+          case "pending":
+            color = darkMode ? "#d89614" : "orange";
+            break;
+          default:
+            color = darkMode ? "#666666" : "default";
+        }
+        return (
+          <Tag
+            color={color}
+            style={{
+              minWidth: "90px",
+              textAlign: "center",
+              backgroundColor: darkMode ? `${color}22` : undefined,
+              border: darkMode ? `1px solid ${color}` : undefined,
+              color: darkMode ? color : undefined,
+            }}
+          >
+            {displayStatus}
+          </Tag>
+        );
+      },
     },
   ];
 
@@ -884,7 +951,40 @@ const Review = () => {
         title: "Status",
         dataIndex: "status",
         key: "status",
-        render: (status) => status || "Pending",
+        render: (status) => {
+          let color;
+          const displayStatus = status || "Pending";
+          switch (displayStatus.toLowerCase()) {
+            case "submitted":
+              color = darkMode ? "#1668dc" : "blue";
+              break;
+            case "reject":
+              color = darkMode ? "#dc4446" : "red";
+              break;
+            case "complete":
+              color = darkMode ? "#49aa19" : "green";
+              break;
+            case "pending":
+              color = darkMode ? "#d89614" : "orange";
+              break;
+            default:
+              color = darkMode ? "#666666" : "default";
+          }
+          return (
+            <Tag
+              color={color}
+              style={{
+                minWidth: "90px",
+                textAlign: "center",
+                backgroundColor: darkMode ? `${color}22` : undefined,
+                border: darkMode ? `1px solid ${color}` : undefined,
+                color: darkMode ? color : undefined,
+              }}
+            >
+              {displayStatus}
+            </Tag>
+          );
+        },
       },
       {
         title: "Comment",
@@ -958,13 +1058,39 @@ const Review = () => {
         title: "Status",
         dataIndex: "status",
         key: "status",
-        render: (status, resource) => {
-          const finalStatus = getResourceStatus(
-            resource,
-            record.status,
-            record.otherParticipants
+        render: (status) => {
+          let color;
+          const displayStatus = status || "Pending";
+          switch (displayStatus.toLowerCase()) {
+            case "submitted":
+              color = darkMode ? "#1668dc" : "blue";
+              break;
+            case "reject":
+              color = darkMode ? "#dc4446" : "red";
+              break;
+            case "complete":
+              color = darkMode ? "#49aa19" : "green";
+              break;
+            case "pending":
+              color = darkMode ? "#d89614" : "orange";
+              break;
+            default:
+              color = darkMode ? "#666666" : "default";
+          }
+          return (
+            <Tag
+              color={color}
+              style={{
+                minWidth: "90px",
+                textAlign: "center",
+                backgroundColor: darkMode ? `${color}22` : undefined,
+                border: darkMode ? `1px solid ${color}` : undefined,
+                color: darkMode ? color : undefined,
+              }}
+            >
+              {displayStatus}
+            </Tag>
           );
-          return finalStatus || "pending";
         },
       },
       {
@@ -1052,7 +1178,7 @@ const Review = () => {
   };
 
   return (
-    <div style={{ padding: "20px", marginTop: "40px" }}>
+    <div style={{ padding: "20px", marginTop: "170px" }}>
       {!isApprover ? (
         <Alert
           message="Access Denied"
@@ -1252,6 +1378,13 @@ const Review = () => {
             okText="Submit Approval"
             cancelText="Cancel"
             className={darkMode ? "dark-theme" : ""}
+            okButtonProps={{
+              style: {
+                backgroundColor: "#06923E",
+                borderColor: "#06923E",
+                color: "white",
+              },
+            }}
             styles={{
               content: {
                 background: darkMode ? "#141414" : "#fff",
@@ -1293,6 +1426,13 @@ const Review = () => {
             okText="Submit Rejection"
             cancelText="Cancel"
             className={darkMode ? "dark-theme" : ""}
+            okButtonProps={{
+              style: {
+                backgroundColor: "#06923E",
+                borderColor: "#06923E",
+                color: "white",
+              },
+            }}
             styles={{
               content: {
                 background: darkMode ? "#141414" : "#fff",

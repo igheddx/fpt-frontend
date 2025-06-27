@@ -9,6 +9,7 @@ import {
   Table,
   Modal,
   message,
+  Collapse,
 } from "antd";
 import {
   DeleteOutlined,
@@ -111,6 +112,8 @@ const MyOrg = () => {
   const [profileCloudCustomer, setProfileCloudCustomer] = useState([]); //store profile linked to customer
   const [selectedCustName, setSelectedCustName] = useState("");
   const [selectedCloudName, setSelectedCloudName] = useState("");
+  const profileSearchRef = useRef(null);
+  const updateOrgRef = useRef(null);
 
   useEffect(() => {
     setNewCustomers([]); //reset onload
@@ -248,23 +251,22 @@ const MyOrg = () => {
     setNewCustomers([]);
     clearAlerts();
 
-    const orgIdMaster = org.organizationId;
-
     try {
       const data = await apiCall({
         method: "get",
-        url: `/api/customeraccount/org-details/${orgIdMaster}`,
+        url: `/api/customeraccount/org-details/${org.organizationId}`,
       });
       setSelectedOrg(Array.isArray(data) ? data : [data]);
-      console.log("setSelectedOrg Data:", JSON.stringify(data));
 
-      setSearchResults([]);
-      setSearchValue("");
+      // Scroll to update organization section after data is loaded
+      setTimeout(() => {
+        updateOrgRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 100);
     } catch (error) {
       console.error("Error fetching organization details:", error);
-      setSelectedOrg([]);
-      setSearchResults([]);
-      setSearchValue("");
     }
   };
 
@@ -769,12 +771,12 @@ const MyOrg = () => {
   };
 
   const viewProfiles = (custId, cloudId, custName, cloudName) => {
+    setCurrentSection("profile");
     setSelectedCustId(custId);
     setSelectedCloudId(cloudId);
     setSelectedCustName(custName);
     setSelectedCloudName(cloudName);
     setSelectedCustomerCloud(custId);
-    setCurrentSection("profile");
 
     // Call the linked-profiles endpoint
     apiCall({
@@ -798,6 +800,14 @@ const MyOrg = () => {
           visible: true,
         });
       });
+
+    // Scroll to profile search section
+    setTimeout(() => {
+      profileSearchRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 100);
   };
 
   //general remove add new profile to customer - no api call
@@ -1639,7 +1649,7 @@ const MyOrg = () => {
         }}
       >
         <h3>Search Organization</h3>
-        <div style={{ position: "relative", width: 400 }}>
+        <div style={{ position: "relative", width: "100%", maxWidth: 800 }}>
           <Input.Search
             style={{ width: "100%" }}
             value={searchValue}
@@ -1688,293 +1698,32 @@ const MyOrg = () => {
       </div>
 
       {/* Create New Organization Section */}
-      <div
+      <Collapse
+        defaultActiveKey={[]}
         style={{
           marginBottom: 24,
-          background: darkMode ? "#1e1e1e" : "#fff",
-          color: darkMode ? "#fff" : "#000",
-          borderRadius: "8px",
-          padding: "24px",
-          boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)",
-          marginBottom: "16px",
+          border: darkMode ? "1px solid #1f2329" : undefined,
+          background: darkMode ? "#1e1e1e" : undefined,
         }}
       >
-        <h3>Create New Organization</h3>
-        {createAlert.visible && (
-          <Alert
-            message={createAlert.message}
-            type={createAlert.type}
-            showIcon
-            style={{
-              marginBottom: 16,
-              background: darkMode ? "#29303d" : undefined,
-              color: darkMode ? "#fff" : undefined,
-              border: darkMode ? "1px solid #434a56" : undefined,
-            }}
-          />
-        )}
-
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ display: "block", marginBottom: 4 }}>
-            Organization Name:
-          </label>
-          <Input
-            style={{ width: 400 }}
-            placeholder="Enter Organization Name"
-            value={newOrgName}
-            onChange={(e) => {
-              setNewOrgName(e.target.value);
-              setOrgNameError("");
-            }}
-          />
-          {orgNameError && (
-            <div style={{ color: "red", fontSize: "12px", marginTop: "4px" }}>
-              {orgNameError}
-            </div>
-          )}
-        </div>
-
-        {customers.map((cust, idx) => (
+        <Collapse.Panel
+          header="Create New Organization"
+          key="1"
+          style={{
+            border: darkMode ? "1px solid #1f2329" : undefined,
+          }}
+        >
           <div
-            key={cust.id || idx}
             style={{
-              border: "1px solid #ccc",
-              borderRadius: 8,
-              marginBottom: 16,
-              padding: 16,
-              background: darkMode ? "#23272f" : "#f9f9f9",
-              display: "flex",
-              flexDirection: "column",
-              gap: 16,
-              position: "relative",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 24,
-                marginBottom: 8,
-              }}
-            >
-              <div style={{ flex: 1, minWidth: 220 }}>
-                <label>Customer Name:</label>
-                <Input
-                  value={cust.name}
-                  onChange={(e) => {
-                    const updated = [...customers];
-                    updated[idx].name = e.target.value;
-                    setCustomers(updated);
-                  }}
-                  style={{ width: "100%", marginLeft: 8 }}
-                />
-                {cust.errors?.name && (
-                  <div style={{ color: "red", fontSize: "12px" }}>
-                    {cust.errors.name}
-                  </div>
-                )}
-              </div>
-            </div>
-            {/* At least one Account row for new customer */}
-            {(cust.accounts && cust.accounts.length > 0
-              ? cust.accounts
-              : [{}]
-            ).map((account, accIdx) => (
-              <div
-                key={account.accountId || accIdx}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 16,
-                  marginBottom: 8,
-                  marginLeft: 24,
-                  background: darkMode ? "#181c22" : "#f4f6fa",
-                  borderRadius: 6,
-                  padding: "10px 12px",
-                  boxShadow: darkMode
-                    ? "0 1px 4px rgba(0,0,0,0.25)"
-                    : "0 1px 4px rgba(0,0,0,0.07)",
-                }}
-              >
-                {/* Account Name textbox */}
-                <div style={{ flex: 2, minWidth: 180 }}>
-                  <label style={{ fontWeight: 500, marginRight: 8 }}>
-                    Account:
-                  </label>
-                  <Input
-                    value={account.name || ""}
-                    onChange={(e) => {
-                      const updated = [...customers];
-                      if (!updated[idx].accounts) updated[idx].accounts = [{}];
-                      updated[idx].accounts[accIdx] = {
-                        ...updated[idx].accounts[accIdx],
-                        name: e.target.value,
-                      };
-                      setCustomers(updated);
-                    }}
-                    style={{
-                      width: "100%",
-                      background: darkMode ? "#23272f" : "#f5f5f5",
-                    }}
-                  />
-                </div>
-                {/* Cloud Provider dropdown */}
-                <div
-                  style={{
-                    flex: 1,
-                    minWidth: 120,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                  }}
-                >
-                  <label style={{ fontWeight: 500, marginRight: 8 }}>
-                    Cloud Provider:
-                  </label>{" "}
-                  <Select
-                    value={account.cloudType || ""}
-                    onChange={(value) => {
-                      const updated = [...customers];
-                      if (!updated[idx].accounts) updated[idx].accounts = [{}];
-                      updated[idx].accounts[accIdx] = {
-                        ...updated[idx].accounts[accIdx],
-                        cloudType: value,
-                      };
-                      setCustomers(updated);
-                    }}
-                    dropdownStyle={{
-                      backgroundColor: darkMode ? "#333" : "#fff",
-                      color: darkMode ? "#fff" : "#000",
-                    }}
-                    style={{ width: 140 }}
-                  >
-                    <Option value="AWS">AWS</Option>
-                    <Option value="GCP">GCP</Option>
-                    <Option value="Azure">Azure</Option>
-                  </Select>
-                  {/* Save button for new account */}
-                  {account.isNew && (
-                    <Button
-                      icon={<SaveOutlined />}
-                      type="text"
-                      style={{ color: "#1890ff", marginLeft: 4 }}
-                      onClick={() =>
-                        handleSaveNewAccount(
-                          selectedOrgId,
-                          cust.customerId,
-                          accIdx
-                        )
-                      }
-                      title="Save this account to database"
-                    />
-                  )}
-                  {/* Delete icon for account row */}
-                  <Button
-                    icon={<DeleteOutlined />}
-                    type="text"
-                    danger
-                    onClick={() => {
-                      // If account.accountId exists and it's not a new account, call handleDeleteAccountFromCustomer (persisted account)
-                      // Otherwise, just remove the row from state (newly added, not yet saved)
-                      if (account.accountId && !account.isNew) {
-                        handleDeleteAccountFromCustomer(
-                          selectedOrgId,
-                          cust.customerId,
-                          account.accountId
-                        );
-                      } else {
-                        setSelectedOrg((prevOrgs) =>
-                          prevOrgs.map((o) => {
-                            if (o.organizationId !== selectedOrgId) return o;
-                            return {
-                              ...o,
-                              customer: o.customer.map((c) => {
-                                if (c.customerId !== cust.customerId) return c;
-                                const newAccounts = (c.accounts || []).filter(
-                                  (_, i) => i !== accIdx
-                                );
-                                return { ...c, accounts: newAccounts };
-                              }),
-                            };
-                          })
-                        );
-                      }
-                    }}
-                    style={{ marginLeft: 4 }}
-                  />
-                </div>
-              </div>
-            ))}
-            {/* + Add Account button at lower right */}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                marginTop: 8,
-              }}
-            >
-              <Button
-                type="dashed"
-                onClick={() => {
-                  const updated = [...customers];
-                  if (!updated[idx].accounts) updated[idx].accounts = [{}];
-                  updated[idx].accounts.push({ name: "", cloudType: "" });
-                  setCustomers(updated);
-                }}
-                style={{ width: 150 }}
-              >
-                + Add Account
-              </Button>
-            </div>
-            {/* Delete customer section button */}
-            <Button
-              icon={<DeleteOutlined />}
-              type="text"
-              danger
-              onClick={() => handleDeleteCustomerRow(idx)}
-              style={{ alignSelf: "flex-end", marginTop: 8 }}
-            />
-          </div>
-        ))}
-
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <Button type="dashed" onClick={handleAddCustomer}>
-            + Add Customer
-          </Button>
-          <Button type="primary" onClick={handleSave}>
-            Save
-          </Button>
-        </div>
-      </div>
-
-      {/* Update Organization Section */}
-      {/* {console.log("ON TOP OF UPDATE ORG SECTION", JSON.stringify(selectedOrg))}
-      {console.log("selectedOrg count ==", selectedOrg)}
-      {console.log(
-        "selectedOrg array",
-        selectedOrg,
-        Array.isArray(selectedOrg)
-      )} */}
-      {selectedOrg &&
-        selectedOrg.length > 0 &&
-        selectedOrg.map((org, index) => (
-          <div
-            key={org.organizationId}
-            style={{
-              marginBottom: 24,
               background: darkMode ? "#1e1e1e" : "#fff",
               color: darkMode ? "#fff" : "#000",
-              borderRadius: "8px",
-              padding: "24px",
-              boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)",
-              marginBottom: "16px",
+              padding: "16px",
             }}
           >
-            <h3>Update Organization - {org.name}</h3>
-            {updateAlert.visible && (
+            {createAlert.visible && (
               <Alert
-                message={updateAlert.message}
-                type={updateAlert.type}
+                message={createAlert.message}
+                type={createAlert.type}
                 showIcon
                 style={{
                   marginBottom: 16,
@@ -1985,70 +1734,602 @@ const MyOrg = () => {
               />
             )}
 
-            <Space direction="vertical" style={{ width: "100%" }}>
-              {/* Organization Name Update */}
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ display: "block", marginBottom: 4 }}>
-                  Organization Name:
-                </label>
-                <Input
-                  style={{ width: 400 }}
-                  value={org.name}
-                  onChange={(e) =>
-                    handleUpdateOrgName(e.target.value, org.organizationId)
-                  }
-                />
-              </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: "block", marginBottom: 4 }}>
+                Organization Name:
+              </label>
+              <Input
+                style={{ width: 400 }}
+                placeholder="Enter Organization Name"
+                value={newOrgName}
+                onChange={(e) => {
+                  setNewOrgName(e.target.value);
+                  setOrgNameError("");
+                }}
+              />
+              {orgNameError && (
+                <div
+                  style={{ color: "red", fontSize: "12px", marginTop: "4px" }}
+                >
+                  {orgNameError}
+                </div>
+              )}
+            </div>
 
-              {/* Existing Customers */}
-              {org.customer &&
-                org.customer.map((cust, custIdx) => (
+            {customers.map((cust, idx) => (
+              <div
+                key={cust.id || idx}
+                style={{
+                  border: darkMode ? "1px solid #2c3138" : "1px solid #ccc",
+                  borderRadius: 8,
+                  marginBottom: 16,
+                  padding: 16,
+                  background: darkMode ? "#1a1d23" : "#f9f9f9",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 16,
+                  position: "relative",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 24,
+                    marginBottom: 8,
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 220 }}>
+                    <label>Customer Name:</label>
+                    <Input
+                      value={cust.name}
+                      onChange={(e) => {
+                        const updated = [...customers];
+                        updated[idx].name = e.target.value;
+                        setCustomers(updated);
+                      }}
+                      style={{ width: "100%", marginLeft: 8 }}
+                    />
+                    {cust.errors?.name && (
+                      <div style={{ color: "red", fontSize: "12px" }}>
+                        {cust.errors.name}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {/* At least one Account row for new customer */}
+                {(cust.accounts && cust.accounts.length > 0
+                  ? cust.accounts
+                  : [{}]
+                ).map((account, accIdx) => (
                   <div
-                    key={cust.customerId || custIdx}
+                    key={account.accountId || accIdx}
                     style={{
-                      border: "1px solid #ccc",
-                      borderRadius: 8,
-                      marginBottom: 16,
-                      padding: 16,
-                      background: darkMode ? "#23272f" : "#f9f9f9",
                       display: "flex",
-                      flexDirection: "column",
+                      alignItems: "center",
                       gap: 16,
+                      marginBottom: 8,
+                      marginLeft: 24,
+                      background: darkMode ? "#141619" : "#f4f6fa",
+                      borderRadius: 6,
+                      padding: "10px 12px",
+                      boxShadow: darkMode
+                        ? "0 1px 4px rgba(0,0,0,0.3)"
+                        : "0 1px 4px rgba(0,0,0,0.07)",
+                      border: darkMode ? "1px solid #2c3138" : "none",
                     }}
                   >
+                    {/* Account Name textbox */}
+                    <div style={{ flex: 2, minWidth: 180 }}>
+                      <label style={{ fontWeight: 500, marginRight: 8 }}>
+                        Account:
+                      </label>
+                      <Input
+                        value={account.name || ""}
+                        onChange={(e) => {
+                          const updated = [...customers];
+                          if (!updated[idx].accounts)
+                            updated[idx].accounts = [{}];
+                          updated[idx].accounts[accIdx] = {
+                            ...updated[idx].accounts[accIdx],
+                            name: e.target.value,
+                          };
+                          setCustomers(updated);
+                        }}
+                        style={{
+                          width: "100%",
+                          background: darkMode ? "#23272f" : "#f5f5f5",
+                        }}
+                      />
+                    </div>
+                    {/* Cloud Provider dropdown */}
                     <div
                       style={{
+                        flex: 1,
+                        minWidth: 120,
                         display: "flex",
                         alignItems: "center",
-                        gap: 24,
-                        marginBottom: 8,
+                        gap: 8,
                       }}
                     >
-                      {" "}
-                      <div style={{ flex: 1, minWidth: 220 }}>
-                        <label>Customer Name:</label>
-                        <Input
-                          value={cust.name}
-                          onChange={(e) => {
-                            // Update customer name in state without API call
-                            setSelectedOrg((prevOrgs) =>
-                              prevOrgs.map((org) => ({
-                                ...org,
-                                customer: org.customer.map((c, cIndex) =>
-                                  cIndex === custIdx
-                                    ? { ...c, name: e.target.value }
-                                    : c
-                                ),
-                              }))
-                            );
-                          }}
-                          style={{ width: "100%", marginLeft: 8 }}
+                      <label style={{ fontWeight: 500, marginRight: 8 }}>
+                        Cloud Provider:
+                      </label>{" "}
+                      <Select
+                        value={account.cloudType || ""}
+                        onChange={(value) => {
+                          const updated = [...customers];
+                          if (!updated[idx].accounts)
+                            updated[idx].accounts = [{}];
+                          updated[idx].accounts[accIdx] = {
+                            ...updated[idx].accounts[accIdx],
+                            cloudType: value,
+                          };
+                          setCustomers(updated);
+                        }}
+                        dropdownStyle={{
+                          backgroundColor: darkMode ? "#333" : "#fff",
+                          color: darkMode ? "#fff" : "#000",
+                        }}
+                        style={{ width: 140 }}
+                      >
+                        <Option value="AWS">AWS</Option>
+                        <Option value="GCP">GCP</Option>
+                        <Option value="Azure">Azure</Option>
+                      </Select>
+                      {/* Save button for new account */}
+                      {account.isNew && (
+                        <Button
+                          icon={<SaveOutlined />}
+                          type="text"
+                          style={{ color: "#1890ff", marginLeft: 4 }}
+                          onClick={() =>
+                            handleSaveNewAccount(
+                              selectedOrgId,
+                              cust.customerId,
+                              accIdx
+                            )
+                          }
+                          title="Save this account to database"
                         />
-                      </div>
+                      )}
+                      {/* Delete icon for account row */}
+                      <Button
+                        icon={<DeleteOutlined />}
+                        type="text"
+                        danger
+                        onClick={() => {
+                          // If account.accountId exists and it's not a new account, call handleDeleteAccountFromCustomer (persisted account)
+                          // Otherwise, just remove the row from state (newly added, not yet saved)
+                          if (account.accountId && !account.isNew) {
+                            handleDeleteAccountFromCustomer(
+                              selectedOrgId,
+                              cust.customerId,
+                              account.accountId
+                            );
+                          } else {
+                            setSelectedOrg((prevOrgs) =>
+                              prevOrgs.map((o) => {
+                                if (o.organizationId !== selectedOrgId)
+                                  return o;
+                                return {
+                                  ...o,
+                                  customer: o.customer.map((c) => {
+                                    if (c.customerId !== cust.customerId)
+                                      return c;
+                                    const newAccounts = (
+                                      c.accounts || []
+                                    ).filter((_, i) => i !== accIdx);
+                                    return { ...c, accounts: newAccounts };
+                                  }),
+                                };
+                              })
+                            );
+                          }
+                        }}
+                        style={{ marginLeft: 4 }}
+                      />
                     </div>
-                    {/* Accounts Section */}
-                    {Array.isArray(cust.accounts) &&
-                      cust.accounts.map((account, accIdx) => (
+                  </div>
+                ))}
+                {/* + Add Account button at lower right */}
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    marginTop: 8,
+                  }}
+                >
+                  <Button
+                    type="dashed"
+                    onClick={() => {
+                      const updated = [...customers];
+                      if (!updated[idx].accounts) updated[idx].accounts = [{}];
+                      updated[idx].accounts.push({ name: "", cloudType: "" });
+                      setCustomers(updated);
+                    }}
+                    style={{ width: 150 }}
+                  >
+                    + Add Account
+                  </Button>
+                </div>
+                {/* Delete customer section button */}
+                <Button
+                  icon={<DeleteOutlined />}
+                  type="text"
+                  danger
+                  onClick={() => handleDeleteCustomerRow(idx)}
+                  style={{ alignSelf: "flex-end", marginTop: 8 }}
+                />
+              </div>
+            ))}
+
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <Button type="dashed" onClick={handleAddCustomer}>
+                + Add Customer
+              </Button>
+              <Button
+                type="primary"
+                onClick={handleSave}
+                style={{
+                  backgroundColor: "#06923E",
+                  borderColor: "#06923E",
+                  color: "white",
+                }}
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+        </Collapse.Panel>
+      </Collapse>
+
+      {/* Update Organization Section */}
+      {selectedOrg.length > 0 && (
+        <Collapse
+          defaultActiveKey={["1"]}
+          style={{
+            marginBottom: 24,
+            border: darkMode ? "1px solid #1f2329" : undefined,
+            background: darkMode ? "#1e1e1e" : undefined,
+          }}
+          ref={updateOrgRef}
+        >
+          <Collapse.Panel
+            header="Update Organization"
+            key="1"
+            style={{
+              border: darkMode ? "1px solid #1f2329" : undefined,
+            }}
+          >
+            <div
+              style={{
+                background: darkMode ? "#1e1e1e" : "#fff",
+                color: darkMode ? "#fff" : "#000",
+                padding: "16px",
+              }}
+            >
+              {updateAlert.visible && (
+                <Alert
+                  message={updateAlert.message}
+                  type={updateAlert.type}
+                  showIcon
+                  style={{ marginBottom: 16 }}
+                />
+              )}
+              {selectedOrg.map((org, orgIdx) => (
+                <div key={org.organizationId}>
+                  <h3>Update Organization - {org.name}</h3>
+                  {/* Organization Name Update */}
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ display: "block", marginBottom: 4 }}>
+                      Organization Name:
+                    </label>
+                    <Input
+                      style={{ width: 400 }}
+                      value={org.name}
+                      onChange={(e) =>
+                        handleUpdateOrgName(e.target.value, org.organizationId)
+                      }
+                    />
+                  </div>
+
+                  {/* Existing Customers */}
+                  {org.customer &&
+                    org.customer.map((cust, custIdx) => (
+                      <div
+                        key={cust.customerId || custIdx}
+                        style={{
+                          border: "1px solid #ccc",
+                          borderRadius: 8,
+                          marginBottom: 16,
+                          padding: 16,
+                          background: darkMode ? "#23272f" : "#f9f9f9",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 16,
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 24,
+                            marginBottom: 8,
+                          }}
+                        >
+                          {" "}
+                          <div style={{ flex: 1, minWidth: 220 }}>
+                            <label>Customer Name:</label>
+                            <Input
+                              value={cust.name}
+                              onChange={(e) => {
+                                // Update customer name in state without API call
+                                setSelectedOrg((prevOrgs) =>
+                                  prevOrgs.map((org) => ({
+                                    ...org,
+                                    customer: org.customer.map((c, cIndex) =>
+                                      cIndex === custIdx
+                                        ? { ...c, name: e.target.value }
+                                        : c
+                                    ),
+                                  }))
+                                );
+                              }}
+                              style={{ width: "100%", marginLeft: 8 }}
+                            />
+                          </div>
+                        </div>
+                        {/* Accounts Section */}
+                        {Array.isArray(cust.accounts) &&
+                          cust.accounts.map((account, accIdx) => (
+                            <div
+                              key={account.accountId || accIdx}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 16,
+                                marginBottom: 8,
+                                marginLeft: 24,
+                                background: darkMode ? "#181c22" : "#f4f6fa",
+                                borderRadius: 6,
+                                padding: "10px 12px",
+                                boxShadow: darkMode
+                                  ? "0 1px 4px rgba(0,0,0,0.25)"
+                                  : "0 1px 4px rgba(0,0,0,0.07)",
+                              }}
+                            >
+                              {/* Account Name in textbox (disabled only if not new) */}
+                              <div style={{ flex: 2, minWidth: 180 }}>
+                                <label
+                                  style={{ fontWeight: 500, marginRight: 8 }}
+                                >
+                                  Account:
+                                </label>
+                                <Input
+                                  value={account.name}
+                                  disabled={!account.isNew}
+                                  onChange={(e) => {
+                                    handleUpdateCustomerAccount(
+                                      custIdx,
+                                      accIdx,
+                                      e.target.value,
+                                      org.organizationId,
+                                      account.accountId
+                                    );
+                                  }}
+                                  style={{
+                                    width: "100%",
+                                    background: darkMode
+                                      ? "#23272f"
+                                      : "#f5f5f5",
+                                  }}
+                                />
+                              </div>
+                              {/* Cloud Provider dropdown */}
+                              <div
+                                style={{
+                                  flex: 1,
+                                  minWidth: 120,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 8,
+                                }}
+                              >
+                                <label
+                                  style={{ fontWeight: 500, marginRight: 8 }}
+                                >
+                                  Cloud Provider:
+                                </label>
+                                <Select
+                                  value={account.cloudtype || ""}
+                                  onChange={(value) => {
+                                    // Update cloud provider in state without API call
+                                    setSelectedOrg((prevOrgs) =>
+                                      prevOrgs.map((org) => ({
+                                        ...org,
+                                        customer: org.customer.map(
+                                          (c, cIndex) =>
+                                            cIndex === custIdx
+                                              ? {
+                                                  ...c,
+                                                  accounts: (
+                                                    c.accounts || []
+                                                  ).map((acc, aIndex) =>
+                                                    aIndex === accIdx
+                                                      ? {
+                                                          ...acc,
+                                                          cloudtype: value,
+                                                        }
+                                                      : acc
+                                                  ),
+                                                }
+                                              : c
+                                        ),
+                                      }))
+                                    );
+                                  }}
+                                  dropdownStyle={{
+                                    backgroundColor: darkMode ? "#333" : "#fff",
+                                    color: darkMode ? "#fff" : "#000",
+                                  }}
+                                  style={{ width: 140 }}
+                                >
+                                  <Option value="AWS">AWS</Option>
+                                  <Option value="GCP">GCP</Option>
+                                  <Option value="Azure">Azure</Option>
+                                </Select>
+                                {/* Save button for saving changes */}
+                                <Button
+                                  icon={<SaveOutlined />}
+                                  type="text"
+                                  onClick={() => {
+                                    const customer = org.customer[custIdx];
+                                    const account = customer.accounts[accIdx];
+
+                                    handleUpdateCustomerProvider(
+                                      custIdx,
+                                      accIdx,
+                                      account.cloudtype,
+                                      org.organizationId,
+                                      account.accountId
+                                    );
+                                  }}
+                                  style={{ marginLeft: 4 }}
+                                  title="Save changes"
+                                />
+                                <Button
+                                  icon={<DeleteOutlined />}
+                                  type="text"
+                                  danger
+                                  onClick={() => {
+                                    // If account.accountId exists, call handleDeleteAccountFromCustomer (persisted account)
+                                    // Otherwise, just remove the row from state (newly added, not yet saved)
+                                    if (account.accountId && !account.isNew) {
+                                      handleDeleteAccountFromCustomer(
+                                        org.organizationId,
+                                        cust.customerId,
+                                        account.accountId
+                                      );
+                                    } else {
+                                      setSelectedOrg((prevOrgs) =>
+                                        prevOrgs.map((o) => {
+                                          if (
+                                            o.organizationId !==
+                                            org.organizationId
+                                          )
+                                            return o;
+                                          return {
+                                            ...o,
+                                            customer: o.customer.map(
+                                              (c, cIndex) => {
+                                                if (cIndex !== custIdx)
+                                                  return c;
+                                                return {
+                                                  ...c,
+                                                  accounts: c.accounts.filter(
+                                                    (_, aIndex) =>
+                                                      aIndex !== accIdx
+                                                  ),
+                                                };
+                                              }
+                                            ),
+                                          };
+                                        })
+                                      );
+                                    }
+                                  }}
+                                  style={{ marginLeft: 4 }}
+                                />
+                              </div>
+                              {/* Action Buttons for each account */}
+                              <div style={{ display: "flex", gap: 8 }}>
+                                <Button
+                                  icon={<UserOutlined />}
+                                  type="text"
+                                  onClick={() =>
+                                    viewProfiles(
+                                      cust.customerId,
+                                      account.accountId,
+                                      cust.name,
+                                      account.name
+                                    )
+                                  }
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        {/* + Add Account button at lower right */}
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "flex-end",
+                            marginTop: 8,
+                          }}
+                        >
+                          <Button
+                            type="dashed"
+                            onClick={() =>
+                              handleAddAccountToCustomer(
+                                org.organizationId,
+                                cust.customerId
+                              )
+                            }
+                            style={{ width: 150 }}
+                          >
+                            + Add Account
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+
+                  {/* Add New Customers */}
+
+                  {/* {console.log(
+                    "ON TOP OF UPDATE ORG SECTION -- ",
+                    JSON.stringify(newCustomers)
+                  )} */}
+                  {newCustomers.map((cust, idx) => (
+                    <div
+                      key={`new-${idx}`}
+                      style={{
+                        border: "1px solid #ccc",
+                        borderRadius: 8,
+                        marginBottom: 16,
+                        padding: 16,
+                        background: darkMode ? "#23272f" : "#f9f9f9",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 16,
+                        position: "relative",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 24,
+                          marginBottom: 8,
+                        }}
+                      >
+                        <div style={{ flex: 1, minWidth: 220 }}>
+                          <label>Customer Name:</label>
+                          <Input
+                            value={cust.name}
+                            onChange={(e) => {
+                              const updated = [...newCustomers];
+                              updated[idx].name = e.target.value;
+                              setNewCustomers(updated);
+                            }}
+                            style={{ width: "100%", marginLeft: 8 }}
+                          />
+                        </div>
+                      </div>
+                      {/* At least one Account row for new customer */}
+                      {(cust.accounts && cust.accounts.length > 0
+                        ? cust.accounts
+                        : [{}]
+                      ).map((account, accIdx) => (
                         <div
                           key={account.accountId || accIdx}
                           style={{
@@ -2065,22 +2346,22 @@ const MyOrg = () => {
                               : "0 1px 4px rgba(0,0,0,0.07)",
                           }}
                         >
-                          {/* Account Name in textbox (disabled only if not new) */}
+                          {/* Account Name textbox */}
                           <div style={{ flex: 2, minWidth: 180 }}>
                             <label style={{ fontWeight: 500, marginRight: 8 }}>
                               Account:
                             </label>
                             <Input
-                              value={account.name}
-                              disabled={!account.isNew}
+                              value={account.name || ""}
                               onChange={(e) => {
-                                handleUpdateCustomerAccount(
-                                  custIdx,
-                                  accIdx,
-                                  e.target.value,
-                                  org.organizationId,
-                                  account.accountId
-                                );
+                                const updated = [...newCustomers];
+                                if (!updated[idx].accounts)
+                                  updated[idx].accounts = [{}];
+                                updated[idx].accounts[accIdx] = {
+                                  ...updated[idx].accounts[accIdx],
+                                  name: e.target.value,
+                                };
+                                setNewCustomers(updated);
                               }}
                               style={{
                                 width: "100%",
@@ -2102,27 +2383,16 @@ const MyOrg = () => {
                               Cloud Provider:
                             </label>
                             <Select
-                              value={account.cloudtype || ""}
+                              value={account.cloudType || ""}
                               onChange={(value) => {
-                                // Update cloud provider in state without API call
-                                setSelectedOrg((prevOrgs) =>
-                                  prevOrgs.map((org) => ({
-                                    ...org,
-                                    customer: org.customer.map((c, cIndex) =>
-                                      cIndex === custIdx
-                                        ? {
-                                            ...c,
-                                            accounts: (c.accounts || []).map(
-                                              (acc, aIndex) =>
-                                                aIndex === accIdx
-                                                  ? { ...acc, cloudtype: value }
-                                                  : acc
-                                            ),
-                                          }
-                                        : c
-                                    ),
-                                  }))
-                                );
+                                const updated = [...newCustomers];
+                                if (!updated[idx].accounts)
+                                  updated[idx].accounts = [{}];
+                                updated[idx].accounts[accIdx] = {
+                                  ...updated[idx].accounts[accIdx],
+                                  cloudType: value,
+                                };
+                                setNewCustomers(updated);
                               }}
                               dropdownStyle={{
                                 backgroundColor: darkMode ? "#333" : "#fff",
@@ -2134,457 +2404,233 @@ const MyOrg = () => {
                               <Option value="GCP">GCP</Option>
                               <Option value="Azure">Azure</Option>
                             </Select>
-                            {/* Save button for saving changes */}
-                            <Button
-                              icon={<SaveOutlined />}
-                              type="text"
-                              onClick={() => {
-                                const customer = org.customer[custIdx];
-                                const account = customer.accounts[accIdx];
-
-                                handleUpdateCustomerProvider(
-                                  custIdx,
-                                  accIdx,
-                                  account.cloudtype,
-                                  org.organizationId,
-                                  account.accountId
-                                );
-                              }}
-                              style={{ marginLeft: 4 }}
-                              title="Save changes"
-                            />
+                            {/* Delete icon for account row */}
                             <Button
                               icon={<DeleteOutlined />}
                               type="text"
                               danger
                               onClick={() => {
-                                // If account.accountId exists, call handleDeleteAccountFromCustomer (persisted account)
-                                // Otherwise, just remove the row from state (newly added, not yet saved)
-                                if (account.accountId && !account.isNew) {
-                                  handleDeleteAccountFromCustomer(
-                                    org.organizationId,
-                                    cust.customerId,
-                                    account.accountId
-                                  );
-                                } else {
-                                  setSelectedOrg((prevOrgs) =>
-                                    prevOrgs.map((o) => {
-                                      if (
-                                        o.organizationId !== org.organizationId
-                                      )
-                                        return o;
-                                      return {
-                                        ...o,
-                                        customer: o.customer.map(
-                                          (c, cIndex) => {
-                                            if (cIndex !== custIdx) return c;
-                                            return {
-                                              ...c,
-                                              accounts: c.accounts.filter(
-                                                (_, aIndex) => aIndex !== accIdx
-                                              ),
-                                            };
-                                          }
-                                        ),
-                                      };
-                                    })
-                                  );
+                                const updated = [...newCustomers];
+                                if (
+                                  updated[idx].accounts &&
+                                  updated[idx].accounts.length > 1
+                                ) {
+                                  updated[idx].accounts.splice(accIdx, 1);
+                                  setNewCustomers(updated);
                                 }
                               }}
                               style={{ marginLeft: 4 }}
                             />
                           </div>
-                          {/* Action Buttons for each account */}
-                          <div style={{ display: "flex", gap: 8 }}>
-                            <Button
-                              icon={<UserOutlined />}
-                              type="text"
-                              onClick={() =>
-                                viewProfiles(
-                                  cust.customerId,
-                                  account.accountId,
-                                  cust.name,
-                                  account.name
-                                )
-                              }
-                            />
-                          </div>
                         </div>
                       ))}
-                    {/* + Add Account button at lower right */}
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "flex-end",
-                        marginTop: 8,
-                      }}
-                    >
-                      <Button
-                        type="dashed"
-                        onClick={() =>
-                          handleAddAccountToCustomer(
-                            org.organizationId,
-                            cust.customerId
-                          )
-                        }
-                        style={{ width: 150 }}
-                      >
-                        + Add Account
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-
-              {/* Add New Customers */}
-
-              {/* {console.log(
-                "ON TOP OF UPDATE ORG SECTION -- ",
-                JSON.stringify(newCustomers)
-              )} */}
-              {newCustomers.map((cust, idx) => (
-                <div
-                  key={`new-${idx}`}
-                  style={{
-                    border: "1px solid #ccc",
-                    borderRadius: 8,
-                    marginBottom: 16,
-                    padding: 16,
-                    background: darkMode ? "#23272f" : "#f9f9f9",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 16,
-                    position: "relative",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 24,
-                      marginBottom: 8,
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 220 }}>
-                      <label>Customer Name:</label>
-                      <Input
-                        value={cust.name}
-                        onChange={(e) => {
-                          const updated = [...newCustomers];
-                          updated[idx].name = e.target.value;
-                          setNewCustomers(updated);
-                        }}
-                        style={{ width: "100%", marginLeft: 8 }}
-                      />
-                    </div>
-                  </div>
-                  {/* At least one Account row for new customer */}
-                  {(cust.accounts && cust.accounts.length > 0
-                    ? cust.accounts
-                    : [{}]
-                  ).map((account, accIdx) => (
-                    <div
-                      key={account.accountId || accIdx}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 16,
-                        marginBottom: 8,
-                        marginLeft: 24,
-                        background: darkMode ? "#181c22" : "#f4f6fa",
-                        borderRadius: 6,
-                        padding: "10px 12px",
-                        boxShadow: darkMode
-                          ? "0 1px 4px rgba(0,0,0,0.25)"
-                          : "0 1px 4px rgba(0,0,0,0.07)",
-                      }}
-                    >
-                      {/* Account Name textbox */}
-                      <div style={{ flex: 2, minWidth: 180 }}>
-                        <label style={{ fontWeight: 500, marginRight: 8 }}>
-                          Account:
-                        </label>
-                        <Input
-                          value={account.name || ""}
-                          onChange={(e) => {
-                            const updated = [...newCustomers];
-                            if (!updated[idx].accounts)
-                              updated[idx].accounts = [{}];
-                            updated[idx].accounts[accIdx] = {
-                              ...updated[idx].accounts[accIdx],
-                              name: e.target.value,
-                            };
-                            setNewCustomers(updated);
-                          }}
-                          style={{
-                            width: "100%",
-                            background: darkMode ? "#23272f" : "#f5f5f5",
-                          }}
-                        />
-                      </div>
-                      {/* Cloud Provider dropdown */}
+                      {/* + Add Account button at lower right */}
                       <div
                         style={{
-                          flex: 1,
-                          minWidth: 120,
                           display: "flex",
-                          alignItems: "center",
-                          gap: 8,
+                          justifyContent: "flex-end",
+                          marginTop: 8,
                         }}
                       >
-                        <label style={{ fontWeight: 500, marginRight: 8 }}>
-                          Cloud Provider:
-                        </label>
-                        <Select
-                          value={account.cloudType || ""}
-                          onChange={(value) => {
+                        <Button
+                          type="dashed"
+                          onClick={() => {
                             const updated = [...newCustomers];
                             if (!updated[idx].accounts)
                               updated[idx].accounts = [{}];
-                            updated[idx].accounts[accIdx] = {
-                              ...updated[idx].accounts[accIdx],
-                              cloudType: value,
-                            };
+                            updated[idx].accounts.push({
+                              name: "",
+                              cloudType: "",
+                            });
                             setNewCustomers(updated);
                           }}
-                          dropdownStyle={{
-                            backgroundColor: darkMode ? "#333" : "#fff",
-                            color: darkMode ? "#fff" : "#000",
-                          }}
-                          style={{ width: 140 }}
+                          style={{ width: 150 }}
                         >
-                          <Option value="AWS">AWS</Option>
-                          <Option value="GCP">GCP</Option>
-                          <Option value="Azure">Azure</Option>
-                        </Select>
-                        {/* Delete icon for account row */}
+                          + Add Account
+                        </Button>
+                      </div>
+                      {/* Save button below the card */}
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "flex-end",
+                          marginTop: 8,
+                        }}
+                      >
                         <Button
-                          icon={<DeleteOutlined />}
-                          type="text"
-                          danger
-                          onClick={() => {
+                          type="primary"
+                          loading={cust.saving}
+                          onClick={async () => {
+                            // Find the correct org for this customer card
+                            const org = selectedOrg[orgIdx]; // Changed from index to orgIdx
+                            // Prepare correct payload for API
+                            const payload = {
+                              organizationId: org.organizationId,
+                              customers: [
+                                {
+                                  customerId: cust.customerId || undefined,
+                                  name: cust.name,
+                                  isActive: true,
+                                  accounts: (cust.accounts || []).map((a) => ({
+                                    accountId: a.accountId || undefined,
+                                    name: a.name,
+                                    isActive: true,
+                                    cloudType: a.cloudType || "",
+                                  })),
+                                },
+                              ],
+                            };
+                            // Set saving state
                             const updated = [...newCustomers];
-                            if (
-                              updated[idx].accounts &&
-                              updated[idx].accounts.length > 1
-                            ) {
-                              updated[idx].accounts.splice(accIdx, 1);
-                              setNewCustomers(updated);
+                            updated[idx].saving = true;
+                            setNewCustomers(updated);
+                            try {
+                              await apiCall({
+                                method: "POST",
+                                url: "/api/customeraccount/edit-cascade",
+                                data: payload,
+                              });
+                              message.success(
+                                "Customer and accounts saved successfully!"
+                              );
+
+                              // Refresh the organization data
+                              const refreshedData = await apiCall({
+                                method: "get",
+                                url: `/api/customeraccount/org-details/${org.organizationId}`,
+                              });
+
+                              // Update the selectedOrg state with fresh data
+                              setSelectedOrg(
+                                Array.isArray(refreshedData)
+                                  ? refreshedData
+                                  : [refreshedData]
+                              );
+
+                              // Remove the saved customer from newCustomers
+                              const afterSave = [...newCustomers];
+                              afterSave.splice(idx, 1);
+                              setNewCustomers(afterSave);
+                            } catch (err) {
+                              message.error(
+                                "Failed to save customer: " +
+                                  (err?.message || "Unknown error")
+                              );
+                              const afterError = [...newCustomers];
+                              afterError[idx].saving = false;
+                              setNewCustomers(afterError);
                             }
                           }}
-                          style={{ marginLeft: 4 }}
-                        />
+                          style={{ width: 120 }}
+                        >
+                          Save
+                        </Button>
                       </div>
+                      {/* Delete customer section button */}
+                      <Button
+                        icon={<DeleteOutlined />}
+                        type="text"
+                        danger
+                        onClick={() => handleDeleteNewCustomerRow(idx)}
+                        style={{ alignSelf: "flex-end", marginTop: 8 }}
+                      />
                     </div>
                   ))}
-                  {/* + Add Account button at lower right */}
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "flex-end",
-                      marginTop: 8,
-                    }}
-                  >
-                    <Button
-                      type="dashed"
-                      onClick={() => {
-                        const updated = [...newCustomers];
-                        if (!updated[idx].accounts)
-                          updated[idx].accounts = [{}];
-                        updated[idx].accounts.push({ name: "", cloudType: "" });
-                        setNewCustomers(updated);
-                      }}
-                      style={{ width: 150 }}
-                    >
-                      + Add Account
-                    </Button>
-                  </div>
-                  {/* Save button below the card */}
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "flex-end",
-                      marginTop: 8,
-                    }}
-                  >
-                    <Button
-                      type="primary"
-                      loading={cust.saving}
-                      onClick={async () => {
-                        // Find the correct org for this customer card
-                        const org = selectedOrg[index];
-                        // Prepare correct payload for API
-                        const payload = {
-                          organizationId: org.organizationId,
-                          customers: [
-                            {
-                              customerId: cust.customerId || undefined,
-                              name: cust.name,
-                              isActive: true,
-                              accounts: (cust.accounts || []).map((a) => ({
-                                accountId: a.accountId || undefined,
-                                name: a.name,
-                                isActive: true,
-                                cloudType: a.cloudType || "",
-                              })),
-                            },
-                          ],
-                        };
-                        // Set saving state
-                        const updated = [...newCustomers];
-                        updated[idx].saving = true;
-                        setNewCustomers(updated);
-                        try {
-                          await apiCall({
-                            method: "POST",
-                            url: "/api/customeraccount/edit-cascade",
-                            data: payload,
-                          });
-                          message.success(
-                            "Customer and accounts saved successfully!"
-                          );
 
-                          // Refresh the organization data
-                          const refreshedData = await apiCall({
-                            method: "get",
-                            url: `/api/customeraccount/org-details/${org.organizationId}`,
-                          });
-
-                          // Update the selectedOrg state with fresh data
-                          setSelectedOrg(
-                            Array.isArray(refreshedData)
-                              ? refreshedData
-                              : [refreshedData]
-                          );
-
-                          // Remove the saved customer from newCustomers
-                          const afterSave = [...newCustomers];
-                          afterSave.splice(idx, 1);
-                          setNewCustomers(afterSave);
-                        } catch (err) {
-                          message.error(
-                            "Failed to save customer: " +
-                              (err?.message || "Unknown error")
-                          );
-                          const afterError = [...newCustomers];
-                          afterError[idx].saving = false;
-                          setNewCustomers(afterError);
-                        }
-                      }}
-                      style={{ width: 120 }}
-                    >
-                      Save
-                    </Button>
-                  </div>
-                  {/* Delete customer section button */}
+                  {/* Add New Customer Button */}
                   <Button
-                    icon={<DeleteOutlined />}
-                    type="text"
-                    danger
-                    onClick={() => handleDeleteNewCustomerRow(idx)}
-                    style={{ alignSelf: "flex-end", marginTop: 8 }}
-                  />
+                    type="dashed"
+                    onClick={() =>
+                      setNewCustomers([
+                        ...newCustomers,
+                        { name: "", accounts: [{ name: "", cloudType: "" }] },
+                      ])
+                    }
+                    style={{ width: "150px", marginTop: "16px" }}
+                  >
+                    + Add Customer
+                  </Button>
                 </div>
               ))}
-
-              {/* Add New Customer Button */}
-              <Button
-                type="dashed"
-                onClick={() =>
-                  setNewCustomers([
-                    ...newCustomers,
-                    { name: "", accounts: [{ name: "", cloudType: "" }] },
-                  ])
-                }
-                style={{ width: "150px", marginTop: "16px" }}
-              >
-                + Add Customer
-              </Button>
-            </Space>
-          </div>
-        ))}
-      {/* 
-      {selectedOrg.map((cust, index) => (
-        <div key={index}>
-          <div>orgname: {cust.name}</div>
-          {cust.customer.map((customer, idx) => (
-            <div key={idx}>
-              <h4>Customer: {customer.name}</h4>
-              <p>Cloud Account Id: {customer.cloudAccount[0].id}</p>
-              <p>Cloud Provider: {customer.cloudAccount[0].provider}</p>
             </div>
-          ))}
-          {console.log("Selected Org:", JSON.stringify(selectedOrg.customer))}
-        </div>
-      ))} */}
+          </Collapse.Panel>
+        </Collapse>
+      )}
 
       {/* Profile Section */}
-      <div
-        style={{
-          marginBottom: 24,
-          background: darkMode ? "#1e1e1e" : "#fff",
-          color: darkMode ? "#fff" : "#000",
-          borderRadius: "8px",
-          padding: "24px",
-          boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)",
-        }}
-      >
-        {currentSection === "profile" && selectedCustId && (
-          <>
-            <Button
-              icon={<ArrowLeftOutlined />}
-              type="text"
-              onClick={() => setCurrentSection("organization")}
-              style={{ marginBottom: 16 }}
-            />
-            {alert.visible && (
-              <Alert
-                message={alert.message}
-                type={alert.type}
-                showIcon
-                style={{
-                  marginBottom: 16,
-                  background: darkMode ? "#29303d" : undefined,
-                  color: darkMode ? "#fff" : undefined,
-                  border: darkMode ? "1px solid #434a56" : undefined,
-                }}
+      {currentSection === "profile" && selectedCustId && (
+        <Collapse
+          defaultActiveKey={["1"]}
+          style={{
+            marginBottom: 24,
+            border: darkMode ? "1px solid #1f2329" : undefined,
+            background: darkMode ? "#1e1e1e" : undefined,
+          }}
+          ref={profileSearchRef}
+        >
+          <Collapse.Panel
+            header="Profile Search"
+            key="1"
+            style={{
+              border: darkMode ? "1px solid #1f2329" : undefined,
+            }}
+          >
+            <div
+              style={{
+                background: darkMode ? "#1e1e1e" : "#fff",
+                color: darkMode ? "#fff" : "#000",
+                padding: "16px",
+              }}
+            >
+              <Button
+                icon={<ArrowLeftOutlined />}
+                type="text"
+                onClick={() => setCurrentSection("organization")}
+                style={{ marginBottom: 16 }}
               />
-            )}
 
-            <h3>Profile Search</h3>
-            {successMessage && (
-              <Alert
-                message={successMessage}
-                type="success"
-                showIcon
-                style={{
-                  marginBottom: 16,
-                  background: darkMode ? "#29303d" : undefined,
-                  color: darkMode ? "#fff" : undefined,
-                  border: darkMode ? "1px solid #434a56" : undefined,
-                }}
-              />
-            )}
+              {alert.visible && (
+                <Alert
+                  message={alert.message}
+                  type={alert.type}
+                  showIcon
+                  style={{
+                    marginBottom: 16,
+                    background: darkMode ? "#29303d" : undefined,
+                    color: darkMode ? "#fff" : undefined,
+                    border: darkMode ? "1px solid #434a56" : undefined,
+                  }}
+                />
+              )}
 
-            <>
-              {/* Search Box when no profiles */}
-              <div style={{ position: "relative", width: 400 }}>
+              {successMessage && (
+                <Alert
+                  message={successMessage}
+                  type="success"
+                  showIcon
+                  style={{
+                    marginBottom: 16,
+                    background: darkMode ? "#29303d" : undefined,
+                    color: darkMode ? "#fff" : undefined,
+                    border: darkMode ? "1px solid #434a56" : undefined,
+                  }}
+                />
+              )}
+
+              <div
+                style={{ position: "relative", width: "100%", maxWidth: 800 }}
+              >
                 <Input.Search
                   placeholder="Search Profiles"
                   value={profileSearchText}
-                  // onChange={(e) => setProfileSearchText(e.target.value); }
-                  // onSearch={handleSearchProfiles}
                   onChange={(e) => {
                     setProfileSearchText(e.target.value);
                     handleSearchProfiles(e.target.value);
                   }}
-                  enterButton
+                  style={{ width: "100%" }}
                 />
 
                 {/* Search Results */}
-                {console.log(
-                  "SearchResultsProfile data ==",
-                  JSON.stringify(searchResultsProfile)
-                )}
                 {searchResultsProfile.length > 0 && (
                   <div
                     style={{
@@ -2626,52 +2672,45 @@ const MyOrg = () => {
                   </div>
                 )}
               </div>
-            </>
 
-            {console.log("filteredProfiles ==", filteredProfiles)}
+              {/* Filtered Profiles Table */}
+              {filteredProfiles.length > 0 && (
+                <>
+                  <div style={{ marginTop: 20 }} />
+                  <h3>
+                    Assign Profile to: {selectedCustName} / {selectedCloudName}
+                  </h3>
+                  <Table
+                    dataSource={filteredProfiles}
+                    columns={profileColumns}
+                    rowKey="id"
+                  />
+                </>
+              )}
 
-            {console.log("filteredProfiles count ==", filteredProfiles.length)}
-
-            {filteredProfiles.length > 0 && (
-              <>
-                <div
-                  style={{
-                    marginTop: 20,
-                  }}
-                ></div>
-                <h3>
-                  Assign Profile to: {selectedCustName} / {selectedCloudName}
-                </h3>
-                <Table
-                  dataSource={filteredProfiles}
-                  columns={profileColumns}
-                  rowKey="id"
-                />
-              </>
-            )}
-
-            {profileCloudCustomer.length > 0 && (
-              <>
-                <div
-                  style={{
-                    marginTop: 20,
-                  }}
-                ></div>
-                <h3>
-                  {" "}
-                  Existing Profiles for: {selectedCustName} /{" "}
-                  {selectedCloudName}
-                </h3>
-                <Table
-                  dataSource={profileCloudCustomer}
-                  columns={profileColumns2}
-                  rowKey="id"
-                />
-              </>
-            )}
-          </>
-        )}
-      </div>
+              {/* Existing Profiles Table */}
+              {profileCloudCustomer.length > 0 && (
+                <>
+                  <div style={{ marginTop: 20 }} />
+                  <h3>
+                    Existing Profiles for: {selectedCustName} /{" "}
+                    {selectedCloudName}
+                  </h3>
+                  <Table
+                    dataSource={profileCloudCustomer}
+                    columns={profileColumns2}
+                    rowKey="id"
+                    className={darkMode ? "dark-table" : ""}
+                    style={{
+                      "--border-color": darkMode ? "#2c3138" : undefined,
+                    }}
+                  />
+                </>
+              )}
+            </div>
+          </Collapse.Panel>
+        </Collapse>
+      )}
     </>
   );
 };

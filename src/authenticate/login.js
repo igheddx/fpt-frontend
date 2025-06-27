@@ -126,9 +126,8 @@ const Login = () => {
         setGlobalState("refreshToken", refreshToken);
       }
 
-      // Redirect to the page they tried to visit or dashboard
-      const from = location.state?.from?.pathname || "/dashboard";
-      navigate(from, { replace: true });
+      // Always redirect to dashboard on login
+      navigate("/dashboard", { replace: true });
     }
   }, [isAuthenticated, navigate, location]);
 
@@ -491,7 +490,12 @@ const Login = () => {
                 disabled={loading || isDisabled}
                 block
                 size="large"
-                style={{ height: "45px" }}
+                style={{
+                  height: "45px",
+                  backgroundColor: "#06923E",
+                  borderColor: "#06923E",
+                  color: "white",
+                }}
               >
                 {loading ? "Authenticating..." : "Login"}
               </Button>

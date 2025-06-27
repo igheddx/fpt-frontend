@@ -29,6 +29,48 @@ const MySubmissions = () => {
   const { accountContext, addPolicyRefreshListener } = useAccountContext();
   const { apiCall } = useApi();
 
+  // Policy type state
+  const [policyTypes, setPolicyTypes] = useState({});
+
+  // Fetch policy types from LOVs
+  const fetchPolicyTypes = async () => {
+    try {
+      const response = await apiCall({
+        method: "GET",
+        url: "/api/LOV/search",
+        params: {
+          description: "POLICY TYPE",
+          isActive: true,
+        },
+      });
+
+      if (response && Array.isArray(response)) {
+        const typeMap = {};
+        response.forEach((lov) => {
+          if (lov.value1) {
+            typeMap[lov.id] = {
+              name: lov.value1,
+              numberOfApprovers: parseInt(lov.value2, 10) || 0,
+            };
+          }
+        });
+        setPolicyTypes(typeMap);
+      }
+    } catch (error) {
+      console.error("Error fetching policy types:", error);
+    }
+  };
+
+  // Get policy type display name
+  const getPolicyTypeName = (type) => {
+    return policyTypes[type]?.name || `Unknown Type (${type})`;
+  };
+
+  // Fetch policy types on component mount
+  useEffect(() => {
+    fetchPolicyTypes();
+  }, []);
+
   // Policy-related state
   const [policies, setPolicies] = useState([]);
   const [policiesLoading, setPoliciesLoading] = useState(false);
@@ -60,53 +102,77 @@ const MySubmissions = () => {
     try {
       setPoliciesLoading(true);
 
+      if (!accountContext?.customerId || !accountContext?.accountId) {
+        console.log("No account context available");
+        setPolicies([]);
+        return;
+      }
+
       console.log("🔍 [MySubmissions] Fetching policies for context:", {
-        customerId: accountContext?.customerId,
-        accountId: accountContext?.accountId,
+        customerId: accountContext.customerId,
+        accountId: accountContext.accountId,
+      });
+
+      // First, fetch policy types from LOVs
+      const lovResponse = await apiCall({
+        method: "GET",
+        url: "/api/LOV/search",
+        params: {
+          description: "POLICY TYPE",
+          isActive: true,
+        },
+      });
+
+      console.log("Policy types from LOV:", lovResponse);
+
+      // Create a map of policy types using id as the key
+      const policyTypeMap = {};
+      if (lovResponse && Array.isArray(lovResponse)) {
+        lovResponse.forEach((lov) => {
+          if (lov.value1) {
+            policyTypeMap[lov.id] = {
+              name: lov.value1,
+              numberOfApprovers: parseInt(lov.value2, 10) || 0,
+            };
+          }
+        });
+      }
+
+      console.log("Policy type map:", policyTypeMap);
+
+      // Add query parameters for filtering policies
+      const params = new URLSearchParams({
+        customerId: accountContext.customerId,
+        accountId: accountContext.accountId,
+        isActive: true,
       });
 
       const response = await apiCall({
         method: "GET",
-        url: "/api/Policy",
+        url: `/api/Policy?${params.toString()}`,
       });
 
-      if (response && Array.isArray(response) && accountContext) {
-        // Filter policies based on CURRENT account context
-        const currentCustomerId = accountContext.customerId;
-        const currentAccountId = accountContext.accountId;
+      console.log("Raw policies from API:", response);
 
-        const filteredPolicies = response.filter((policy) => {
-          // Handle both possible case variations from the API
-          const policyCustomerId = policy.customerId || policy.CustomerId;
-          const policyAccountId = policy.accountId || policy.AccountId;
+      if (response && Array.isArray(response)) {
+        // Map policy types to their names using the numeric type value
+        const policiesWithNames = response.map((policy) => ({
+          ...policy,
+          typeName:
+            policyTypeMap[policy.type]?.name || `Unknown Type (${policy.type})`,
+          numberOfApprovers: policyTypeMap[policy.type]?.numberOfApprovers || 0,
+        }));
 
-          return (
-            policyCustomerId === currentCustomerId &&
-            policyAccountId === currentAccountId
-          );
-        });
-
-        console.log(
-          "🔍 [MySubmissions] Found",
-          filteredPolicies.length,
-          "policies for current context"
-        );
-        console.log("🔍 [MySubmissions] Filter details:", {
-          totalPolicies: response.length,
-          filteredPolicies: filteredPolicies.length,
-          currentCustomerId,
-          currentAccountId,
-          samplePolicy: response[0],
-        });
-
-        setPolicies(filteredPolicies);
+        console.log("Final policies with names:", policiesWithNames);
+        setPolicies(policiesWithNames);
       } else {
-        console.log("🔍 [MySubmissions] No policies or context available");
+        console.log("🔍 [MySubmissions] No policies available");
         setPolicies([]);
       }
     } catch (error) {
       console.error("❌ [MySubmissions] Error fetching policies:", error);
       message.error("Failed to load policies");
+      setPolicies([]);
     } finally {
       setPoliciesLoading(false);
     }
@@ -442,6 +508,25 @@ const MySubmissions = () => {
       return;
     }
 
+    console.log("Selected policy:", selectedPolicy);
+    console.log(
+      "Number of approvers required:",
+      selectedPolicy.numberOfApprovers
+    );
+    console.log("Number of approvers selected:", selectedApprovers.length);
+    console.log("Policy numberOfApprovers:", selectedPolicy.numberOfApprovers);
+    console.log("Policy object:", selectedPolicy);
+
+    // Validate number of approvers against policy requirement - must be at least the required number
+    if (selectedPolicy.numberOfApprovers > selectedApprovers.length) {
+      console.log("VALIDATION FAILED: Not enough approvers selected");
+      message.error(
+        `This policy requires at least ${selectedPolicy.numberOfApprovers} approver(s). You have selected ${selectedApprovers.length} approver(s). Please select at least ${selectedPolicy.numberOfApprovers} approver(s).`
+      );
+      return;
+    }
+    console.log("VALIDATION PASSED: Sufficient approvers selected");
+
     // Get current user's profileId
     const currentProfileId = getProfileIdFromSession();
     console.log("Current profileId from session:", currentProfileId);
@@ -622,20 +707,46 @@ const MySubmissions = () => {
 
   const handlePolicyChange = (policyId) => {
     const selectedPolicyData = policies.find((p) => p.id === policyId);
+    console.log("Selected policy data:", selectedPolicyData);
+    console.log(
+      "Number of approvers required:",
+      selectedPolicyData?.numberOfApprovers
+    );
+    console.log("Current selected approvers:", selectedApprovers.length);
+
+    // Clear selected approvers if the number of required approvers has changed
+    if (
+      selectedApprovers.length > 0 &&
+      selectedPolicyData?.numberOfApprovers > selectedApprovers.length
+    ) {
+      message.warning(
+        `This policy requires ${selectedPolicyData.numberOfApprovers} approvers. Your current selection will be cleared.`
+      );
+      setSelectedApprovers([]);
+    }
+
     setSelectedPolicy(selectedPolicyData);
 
     if (selectedPolicyData && resources.length > 0) {
       // Filter resources based on selected policy type
-      if (selectedPolicyData.type === "Tag") {
+      if (selectedPolicyData.type === 1) {
+        // Tag
         setFilteredResources(resources.filter((resource) => resource.isTagged));
-      } else if (selectedPolicyData.type === "Underutilize Resources") {
-        setFilteredResources(
-          resources.filter((resource) => resource.isUnderutilized)
-        );
-      } else if (selectedPolicyData.type === "Orphan Records") {
-        setFilteredResources(
-          resources.filter((resource) => resource.isOrphaned)
-        );
+      } else if (selectedPolicyData.type === 2) {
+        // Delete Tag
+        setFilteredResources(resources);
+      } else if (selectedPolicyData.type === 3) {
+        // Terminate
+        setFilteredResources(resources);
+      } else if (selectedPolicyData.type === 4) {
+        // Stop
+        setFilteredResources(resources);
+      } else if (selectedPolicyData.type === 5) {
+        // Start
+        setFilteredResources(resources);
+      } else if (selectedPolicyData.type === 6) {
+        // Reboot
+        setFilteredResources(resources);
       } else {
         setFilteredResources(resources);
       }
@@ -705,11 +816,11 @@ const MySubmissions = () => {
       key: "action",
       render: (_, record) => (
         <Button
-          type="primary"
+          variant="outlined"
           onClick={() => handleAddResource(record)}
           style={{
-            background: darkMode ? "#177ddc" : undefined,
-            borderColor: darkMode ? "#177ddc" : undefined,
+            borderColor: "#06923E",
+            color: "#06923E",
           }}
         >
           Add
@@ -791,7 +902,14 @@ const MySubmissions = () => {
       title: "Action",
       key: "action",
       render: (_, record) => (
-        <Button onClick={() => handleAddApprover(record)} type="primary">
+        <Button
+          onClick={() => handleAddApprover(record)}
+          variant="outlined"
+          style={{
+            borderColor: "#06923E",
+            color: "#06923E",
+          }}
+        >
           Add
         </Button>
       ),
@@ -905,7 +1023,7 @@ const MySubmissions = () => {
             <Select.Option
               key={policy.id}
               value={policy.id}
-              label={`${policy.name} (${policy.type})`}
+              label={policy.name}
             >
               <div style={{ padding: "4px 0", lineHeight: "1.2" }}>
                 <div
@@ -926,8 +1044,14 @@ const MySubmissions = () => {
                     textOverflow: "ellipsis",
                   }}
                 >
-                  {policy.type} • {policy.customerName || "N/A"} •{" "}
-                  {policy.accountName || "N/A"}
+                  {policy.typeName || `Unknown Type (${policy.type})`} •{" "}
+                  {policy.customerName || "N/A"} • {policy.accountName || "N/A"}{" "}
+                  •{" "}
+                  {policy.numberOfApprovers > 0
+                    ? `${policy.numberOfApprovers} approver${
+                        policy.numberOfApprovers > 1 ? "s" : ""
+                      } required`
+                    : "No approvers required"}
                 </div>
               </div>
             </Select.Option>
@@ -1180,6 +1304,23 @@ const MySubmissions = () => {
           >
             Selected Approvers
           </h3>
+          {selectedPolicy && selectedPolicy.numberOfApprovers > 0 && (
+            <div style={{ marginBottom: "16px" }}>
+              <Alert
+                type={
+                  selectedPolicy.numberOfApprovers > selectedApprovers.length
+                    ? "warning"
+                    : "success"
+                }
+                message={
+                  selectedPolicy.numberOfApprovers > selectedApprovers.length
+                    ? `This policy requires at least ${selectedPolicy.numberOfApprovers} approver(s). You have selected ${selectedApprovers.length} approver(s). Please select at least ${selectedPolicy.numberOfApprovers} approver(s).`
+                    : `Required number of approvers (${selectedPolicy.numberOfApprovers}) has been met. You can select additional approvers if needed.`
+                }
+                showIcon
+              />
+            </div>
+          )}
           <Table
             columns={selectedApproverColumns}
             dataSource={selectedApprovers}
@@ -1212,10 +1353,17 @@ const MySubmissions = () => {
           type="primary"
           onClick={handleSubmit}
           size="large"
+          style={{
+            backgroundColor: "#06923E",
+            borderColor: "#06923E",
+            color: "white",
+          }}
           disabled={
             selectedResources.length === 0 ||
             selectedApprovers.length === 0 ||
-            !selectedPolicy
+            !selectedPolicy ||
+            (selectedPolicy &&
+              selectedPolicy.numberOfApprovers > selectedApprovers.length)
           }
         >
           Submit

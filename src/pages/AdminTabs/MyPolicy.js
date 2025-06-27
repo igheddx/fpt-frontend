@@ -12,6 +12,7 @@ import {
   Space,
   Row,
   Col,
+  InputNumber,
 } from "antd";
 import { useDarkMode } from "../../config/DarkModeContext";
 import { useAccountContext } from "../../contexts/AccountContext";
@@ -40,6 +41,8 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
   const [alertMessage, setAlertMessage] = useState("");
   const [alertType, setAlertType] = useState("success"); // "success", "error", "info"
   const [policyType, setPolicyType] = useState("");
+  const [policyTypes, setPolicyTypes] = useState([]); // Add state for policy types
+  const [tagKeyValuePairs, setTagKeyValuePairs] = useState([]); // Add state for tag key-value pairs
   const tableRef = useRef(null);
   const searchTimeout = useRef(null);
   const { darkMode } = useDarkMode();
@@ -274,6 +277,11 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
 
       console.log("Policy search response:", response);
       if (Array.isArray(response)) {
+        console.log(
+          "🔍 [MyPolicy] Search response fields:",
+          response.length > 0 ? Object.keys(response[0]) : []
+        );
+        console.log("🔍 [MyPolicy] First policy object:", response[0]);
         setSearchResults(response);
         setShowSuggestions(true);
         if (response.length === 0) {
@@ -352,6 +360,7 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
         policyName: selectedPolicy.name,
         tagKey: selectedPolicy.value1,
         tagValue: selectedPolicy.value2,
+        numberOfApprovers: selectedPolicy.numberOfApprovers || 1,
         cloudAccounts: matchingAccountLabel ? [matchingAccountLabel.label] : [],
         isActive:
           selectedPolicy.isActive !== undefined
@@ -450,13 +459,94 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
 
       const accountData = selectedAccount.data;
 
-      // Create the policy object
+      // Handle Delete Tag policy type
+      if (values.policyType === "Delete Tag") {
+        try {
+          const selectedTag = tagKeyValuePairs.find(
+            (tag) => tag.value === values.selectedTag
+          );
+          if (!selectedTag) {
+            showAlertMessage("Selected tag not found", "error");
+            return;
+          }
+
+          // Create the policy object for delete tag
+          const basePolicy = {
+            type: values.policyType,
+            name: values.policyName,
+            value1: selectedTag.tagKey,
+            value2: selectedTag.tagValue,
+            isActive: values.status === "Active",
+            numberOfApprovers: parseInt(values.numberOfApprovers, 10),
+            organizationId: accountData.organizationId,
+            organizationName: accountData.organizationName,
+            customerId: accountData.customerId,
+            customerName: accountData.customerName,
+            accountId: accountData.accountId,
+            accountName: accountData.accountName,
+            cloudType: accountData.cloudType,
+          };
+
+          // Create the policy
+          const policyResponse = await apiCall({
+            method: isEditMode ? "put" : "post",
+            url: isEditMode ? `/api/Policy/${selectedPolicyId}` : "/api/Policy",
+            data: basePolicy,
+          });
+
+          console.log("Delete Tag Policy created:", policyResponse);
+
+          // Create the LOV record for tag deletion
+          if (policyResponse?.id) {
+            const lovResponse = await apiCall({
+              method: "post",
+              url: "/api/LOV",
+              data: {
+                description: "KEYVALUEDELETE",
+                generalId: policyResponse.id,
+                value1: selectedTag.tagKey,
+                value2: selectedTag.tagValue,
+                isActive: true,
+                organizationId: accountData.organizationId,
+                customerId: accountData.customerId,
+                accountId: accountData.accountId,
+                createDateTime: new Date().toISOString(),
+              },
+            });
+
+            console.log("LOV record created for tag deletion:", lovResponse);
+          }
+
+          // Reset form and update UI
+          form.resetFields();
+          setPolicyType("");
+          setIsEditMode(false);
+          setSelectedPolicyId(null);
+          await fetchPolicies();
+
+          showAlertMessage("Delete Tag Policy created successfully");
+
+          // Trigger policy refresh in parent components
+          if (triggerPolicyRefresh) {
+            triggerPolicyRefresh();
+          }
+        } catch (error) {
+          console.error("Error creating delete tag policy:", error);
+          showAlertMessage("Failed to create delete tag policy", "error");
+        } finally {
+          setSavingPolicy(false);
+        }
+        return;
+      }
+
+      // Create the policy object for other types
       const basePolicy = {
         type: values.policyType,
         name: values.policyName,
         value1: values.policyType === "Tag" ? null : values.value1 || "",
         value2: values.policyType === "Tag" ? null : values.value2 || "",
         isActive: values.status === "Active",
+        numberOfApprovers: parseInt(values.numberOfApprovers, 10),
         organizationId: accountData.organizationId,
         organizationName: accountData.organizationName,
         customerId: accountData.customerId,
@@ -674,6 +764,7 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
         policyType: record.policyType,
         status: record.isActive ? "Active" : "Inactive",
         cloudAccounts: matchingAccount ? matchingAccount.label : undefined,
+        numberOfApprovers: record.numberOfApprovers || 0,
       };
 
       // For Tag policies, fetch and set tag values
@@ -832,6 +923,68 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
     }
   }, [policyType]);
 
+  // Fetch policy types from LOVs table
+  const fetchPolicyTypes = async () => {
+    try {
+      const response = await apiCall({
+        method: "GET",
+        url: "/api/LOV/search?description=POLICY TYPE&isActive=true",
+      });
+
+      console.log("Policy Types from LOV (raw response):", response);
+      if (response && Array.isArray(response)) {
+        setPolicyTypes(response);
+      }
+    } catch (error) {
+      console.error("Error fetching policy types:", error);
+      message.error("Failed to load policy types");
+    }
+  };
+
+  // Add effect to fetch policy types on component mount
+  useEffect(() => {
+    fetchPolicyTypes();
+  }, []);
+
+  // Fetch tag key-value pairs from LOVs table
+  const fetchTagKeyValuePairs = async () => {
+    if (!accountContext?.customerId || !accountContext?.accountId) {
+      console.log("No account context available");
+      return;
+    }
+
+    try {
+      const response = await apiCall({
+        method: "GET",
+        url: `/api/LOV/search?description=KEYVALUE&customerId=${accountContext.customerId}&accountId=${accountContext.accountId}&isActive=true`,
+      });
+
+      console.log("Tag Key-Value pairs from LOV:", response);
+      if (response && Array.isArray(response)) {
+        // Transform the response to include both values in the label
+        const formattedPairs = response.map((pair) => ({
+          key: pair.id,
+          value: pair.id,
+          label: `${pair.value1}: ${pair.value2}`,
+          tagKey: pair.value1,
+          tagValue: pair.value2,
+          generalId: pair.generalId,
+        }));
+        setTagKeyValuePairs(formattedPairs);
+      }
+    } catch (error) {
+      console.error("Error fetching tag key-value pairs:", error);
+      message.error("Failed to load tag key-value pairs");
+    }
+  };
+
+  // Add effect to fetch tag key-value pairs when policy type changes to "Delete Tag"
+  useEffect(() => {
+    if (policyType === "Delete Tag") {
+      fetchTagKeyValuePairs();
+    }
+  }, [policyType, accountContext]);
+
   return (
     <div style={{ padding: "0px" }}>
       {/* Search Section */}
@@ -927,24 +1080,38 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
               name="policyType"
               label="Policy Type"
               rules={[
-                { required: true, message: "Please select a policy type" },
+                {
+                  required: true,
+                  message: "Please select a policy type",
+                },
               ]}
               style={{ flex: 1 }}
             >
               <Select
-                size="large"
                 placeholder="Select policy type"
                 onChange={(value) => setPolicyType(value)}
+                loading={!policyTypes.length}
+                size="large"
                 dropdownStyle={{
-                  backgroundColor: darkMode ? "#333" : "#fff",
+                  backgroundColor: darkMode ? "#141414" : "#fff",
                   color: darkMode ? "#fff" : "#000",
                 }}
+                style={{
+                  width: "100%",
+                }}
               >
-                <Option value="Tag">Tag</Option>
-                <Option value="Underutilize Resources">
-                  Underutilize Resources
-                </Option>
-                <Option value="Orphan Records">Orphan Records</Option>
+                {policyTypes.map((type) => (
+                  <Option
+                    key={type.id}
+                    value={type.value1}
+                    style={{
+                      backgroundColor: darkMode ? "#141414" : "#fff",
+                      color: darkMode ? "#fff" : "#000",
+                    }}
+                  >
+                    {type.value1}
+                  </Option>
+                ))}
               </Select>
             </Form.Item>
 
@@ -961,7 +1128,7 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
           </div>
 
           {/* Add the tag input section with increased spacing */}
-          {policyType === "Tag" && (
+          {policyType === "Add Tag" && (
             <div style={{ marginBottom: 32 }}>
               {tagRows.map((row, index) => (
                 <div
@@ -1014,6 +1181,59 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
               </Button>
             </div>
           )}
+
+          {/* Add tag selection for Delete Tag policy type */}
+          {policyType === "Delete Tag" && (
+            <Form.Item
+              name="selectedTag"
+              label="Select Tag to Delete"
+              rules={[
+                {
+                  required: true,
+                  message: "Please select a tag to delete",
+                },
+              ]}
+              style={{ marginBottom: 32 }}
+            >
+              <Select
+                placeholder="Select a tag key-value pair"
+                size="large"
+                loading={!tagKeyValuePairs.length}
+                dropdownStyle={{
+                  backgroundColor: darkMode ? "#141414" : "#fff",
+                  color: darkMode ? "#fff" : "#000",
+                }}
+                style={{
+                  width: "100%",
+                }}
+                options={tagKeyValuePairs}
+              />
+            </Form.Item>
+          )}
+
+          {/* Add Number of Approvers field */}
+          <Form.Item
+            name="numberOfApprovers"
+            label="Number of Approver(s)"
+            rules={[
+              {
+                required: true,
+                message: "Please enter number of approvers",
+              },
+              {
+                type: "number",
+                min: 0,
+                message: "Number must be 0 or greater",
+              },
+            ]}
+            style={{ flex: 1 }}
+          >
+            <InputNumber
+              placeholder="Enter number of approvers"
+              style={{ width: "100%" }}
+              size="large"
+            />
+          </Form.Item>
 
           {/* Status and Account selection with increased top margin */}
           <div style={{ marginTop: policyType === "Tag" ? 32 : 16 }}>
@@ -1072,6 +1292,11 @@ const MyPolicy = ({ selectedOrganization, selectedCloudAccounts }) => {
               size="large"
               loading={savingPolicy}
               disabled={savingPolicy}
+              style={{
+                backgroundColor: "#06923E",
+                borderColor: "#06923E",
+                color: "white",
+              }}
               onClick={() => {
                 // Additional validation for Tag type
                 if (policyType === "Tag") {

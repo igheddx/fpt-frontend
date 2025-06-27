@@ -12,6 +12,11 @@ import {
   Typography,
   Spin,
   Tooltip,
+  Modal,
+  Descriptions,
+  Empty,
+  Tag,
+  List,
 } from "antd";
 import {
   SearchOutlined,
@@ -27,7 +32,7 @@ import "../styles/AdvancedSearch.css";
 
 const { Option } = Select;
 const { TextArea } = Input;
-const { Title } = Typography;
+const { Title, Text } = Typography;
 
 const getStatusColor = (status, isDarkMode) => {
   const statusColors = {
@@ -49,22 +54,58 @@ const getStatusColor = (status, isDarkMode) => {
   return statusColors[normalizedStatus] || statusColors.pending;
 };
 
+// Helper function to get status color and display text
+const getStatusTag = (status, isDarkMode) => {
+  // Convert incoming status to lowercase for comparison
+  const normalizedStatus = status?.toLowerCase() || "";
+
+  let color;
+  let text;
+
+  switch (normalizedStatus) {
+    case "complete":
+      color = isDarkMode ? "#49aa19" : "green";
+      text = "Completed";
+      break;
+    case "reject":
+      color = isDarkMode ? "#dc4446" : "red";
+      text = "Rejected";
+      break;
+    case "submitted":
+      color = isDarkMode ? "#1668dc" : "blue";
+      text = "Submitted";
+      break;
+    case "pending":
+      color = isDarkMode ? "#d89614" : "orange";
+      text = "Pending";
+      break;
+    default:
+      color = isDarkMode ? "#666666" : "default";
+      text = status || "Unknown";
+  }
+
+  return { color, text };
+};
+
 const AdvancedSearch = () => {
   const [searchText, setSearchText] = useState("");
-  const [category, setCategory] = useState("all"); // Default to "all"
+  const [category, setCategory] = useState("all");
   const [selectedOptions, setSelectedOptions] = useState([]);
-  const [isNaturalLanguage, setIsNaturalLanguage] = useState(false);
-  const [nlQuery, setNlQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [detailData, setDetailData] = useState(null);
-  const [searchAttempted, setSearchAttempted] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchAttempted, setSearchAttempted] = useState(false);
+  const [isLoadingResources, setIsLoadingResources] = useState(false);
+  const [associatedResources, setAssociatedResources] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
   const { darkMode } = useDarkMode();
   const { apiCall } = useApi();
 
-  // Options for the second dropdown based on category
+  // Preserve natural language search state for future use
+  const [isNaturalLanguage, setIsNaturalLanguage] = useState(false);
+  const [nlQuery, setNlQuery] = useState("");
+
   const getCategoryOptions = () => {
     switch (category) {
       case "resource":
@@ -78,10 +119,219 @@ const AdvancedSearch = () => {
     }
   };
 
+  const handleSearch = async () => {
+    setSearchAttempted(true);
+    if (!category) return;
+
+    setIsSearching(true);
+    setSelectedRecord(null);
+    setDetailData(null);
+    setAssociatedResources(null);
+
+    try {
+      let endpoint = "";
+      let params = {};
+
+      switch (category) {
+        case "resource":
+          endpoint = "/api/Resource/search";
+          params = {
+            q: searchText.trim().toLowerCase(),
+            type:
+              selectedOptions.length > 0
+                ? selectedOptions.join(",").toLowerCase()
+                : undefined,
+          };
+          break;
+        case "tags":
+          endpoint = "/api/ResourceTag/search";
+          const searchTerm = searchText.trim().toLowerCase();
+          params = {
+            key: searchTerm,
+          };
+          break;
+        case "approvalFlow":
+          endpoint = "/api/ApprovalFlow/search";
+          params = {
+            name: searchText.trim().toLowerCase(),
+          };
+          break;
+        case "policy":
+          endpoint = "/api/Policy/search";
+          params = {
+            name: searchText.trim().toLowerCase(),
+          };
+          break;
+        case "all":
+          try {
+            const searchTerm = searchText.trim().toLowerCase();
+
+            const [
+              resourceRes,
+              tagKeyRes,
+              tagValueRes,
+              approvalRes,
+              policyRes,
+            ] = await Promise.all([
+              apiCall({
+                method: "GET",
+                url: "/api/Resource/search",
+                params: { q: searchTerm },
+              }).catch(() => []),
+
+              apiCall({
+                method: "GET",
+                url: "/api/ResourceTag/search",
+                params: { key: searchTerm },
+              }).catch(() => []),
+
+              apiCall({
+                method: "GET",
+                url: "/api/ResourceTag/search",
+                params: { value: searchTerm },
+              }).catch(() => []),
+
+              apiCall({
+                method: "GET",
+                url: "/api/ApprovalFlow/search",
+                params: { name: searchTerm },
+              }).catch(() => []),
+
+              apiCall({
+                method: "GET",
+                url: "/api/Policy/search",
+                params: { name: searchTerm },
+              }).catch(() => []),
+            ]);
+
+            const allTagResults = [
+              ...(tagKeyRes || []),
+              ...(tagValueRes || []),
+            ];
+            const uniqueTagResults = allTagResults.filter(
+              (tag, index, self) =>
+                index === self.findIndex((t) => t.id === tag.id)
+            );
+
+            const formattedResults = [
+              ...(resourceRes || []).map((r) => ({
+                id: `res-${r.id}`,
+                text: `${r.name} (${r.type})`,
+                category: "Resource",
+              })),
+              ...uniqueTagResults.map((t) => ({
+                id: `tag-${t.id}`,
+                text: `${t.key}: ${t.value}`,
+                category: "Tag",
+                description: t.resourceCount
+                  ? `${t.resourceCount} associated resources`
+                  : undefined,
+              })),
+              ...(approvalRes || []).map((f) => ({
+                id: `flow-${f.id}`,
+                text: `${f.name} (${f.type})`,
+                category: "Approval Flow",
+              })),
+              ...(policyRes || []).map((p) => ({
+                id: `pol-${p.id}`,
+                text: `${p.name} (${p.type})`,
+                category: "Policy",
+              })),
+            ];
+
+            setSearchResults(formattedResults);
+            return;
+          } catch (error) {
+            console.error("Error in combined search:", error);
+            return;
+          }
+        default:
+          console.error("Unknown category:", category);
+          return;
+      }
+
+      if (searchText.trim()) {
+        let response;
+
+        if (category === "tags") {
+          const searchTerm = searchText.trim().toLowerCase();
+          const [keyResults, valueResults] = await Promise.all([
+            apiCall({
+              method: "GET",
+              url: endpoint,
+              params: { key: searchTerm },
+            }).catch(() => []),
+            apiCall({
+              method: "GET",
+              url: endpoint,
+              params: { value: searchTerm },
+            }).catch(() => []),
+          ]);
+
+          const allResults = [...(keyResults || []), ...(valueResults || [])];
+          response = allResults.filter(
+            (tag, index, self) =>
+              index === self.findIndex((t) => t.id === tag.id)
+          );
+        } else {
+          response = await apiCall({
+            method: "GET",
+            url: endpoint,
+            params,
+          });
+        }
+
+        if (response) {
+          let formattedResults = [];
+          switch (category) {
+            case "resource":
+              formattedResults = response.map((r) => ({
+                id: `res-${r.id}`,
+                text: `${r.name} (${r.type})`,
+                category: "Resource",
+              }));
+              break;
+            case "tags":
+              formattedResults = response.map((t) => ({
+                id: `tag-${t.id}`,
+                text: `${t.key}: ${t.value}`,
+                category: "Tag",
+                description: t.resourceCount
+                  ? `${t.resourceCount} associated resources`
+                  : undefined,
+              }));
+              break;
+            case "approvalFlow":
+              formattedResults = response.map((f) => ({
+                id: `flow-${f.id}`,
+                text: `${f.name} (${f.type})`,
+                category: "Approval Flow",
+              }));
+              break;
+            case "policy":
+              formattedResults = response.map((p) => ({
+                id: `pol-${p.id}`,
+                text: `${p.name} (${p.type})`,
+                category: "Policy",
+              }));
+              break;
+          }
+
+          setSearchResults(formattedResults);
+        }
+      }
+    } catch (error) {
+      console.error("Search error:", error);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   const fetchRecordDetails = async (recordId, type) => {
     try {
       let endpoint = "";
-      const id = recordId.split("-")[1]; // Remove the prefix (e.g., "res-123" -> "123")
+      let additionalEndpoints = [];
+      const id = recordId.split("-")[1];
 
       switch (type) {
         case "res":
@@ -92,6 +342,10 @@ const AdvancedSearch = () => {
           break;
         case "flow":
           endpoint = `/api/ApprovalFlow/${id}`;
+          additionalEndpoints = [
+            `/api/ApprovalFlowParticipant?approvalId=${id}`,
+            `/api/ApprovalFlowLog/search?approvalId=${id}`,
+          ];
           break;
         case "pol":
           endpoint = `/api/Policy/${id}`;
@@ -101,21 +355,77 @@ const AdvancedSearch = () => {
           return;
       }
 
-      const response = await apiCall({
+      const mainResponse = await apiCall({
         method: "GET",
         url: endpoint,
       });
 
-      setDetailData({ type, data: response });
+      let additionalData = {};
+      if (additionalEndpoints.length > 0) {
+        const additionalResponses = await Promise.all(
+          additionalEndpoints.map((endpoint) =>
+            apiCall({
+              method: "GET",
+              url: endpoint,
+            })
+          )
+        );
+
+        if (type === "flow") {
+          additionalData = {
+            participants: additionalResponses[0] || [],
+            resources: additionalResponses[1] || [],
+          };
+        }
+      }
+
+      setDetailData({
+        type,
+        data: {
+          ...mainResponse,
+          ...additionalData,
+        },
+      });
     } catch (error) {
       console.error("Error fetching record details:", error);
     }
   };
 
+  const loadAssociatedResources = async (tagId) => {
+    setIsLoadingResources(true);
+    try {
+      // First get the tag details to get the resourceId
+      const tagResponse = await apiCall({
+        method: "GET",
+        url: `/api/ResourceTag/${tagId}`,
+      });
+
+      if (!tagResponse.resourceId) {
+        throw new Error("No resource ID found for this tag");
+      }
+
+      // Then get all resources with this resourceId
+      const response = await apiCall({
+        method: "GET",
+        url: `/api/Resource/${tagResponse.resourceId}`,
+      });
+
+      setAssociatedResources([response]); // Wrap in array since we're showing in a table
+    } catch (error) {
+      console.error("Error loading associated resources:", error);
+    } finally {
+      setIsLoadingResources(false);
+    }
+  };
+
   const handleRowClick = (record) => {
     setSelectedRecord(record);
-    const [type] = record.id.split("-");
-    fetchRecordDetails(record.id, type);
+    if (record.details) {
+      setDetailData(record.details);
+    } else {
+      const [type, id] = record.id.split("-");
+      fetchRecordDetails(record.id, type);
+    }
   };
 
   const handleBackToResults = () => {
@@ -123,240 +433,489 @@ const AdvancedSearch = () => {
     setDetailData(null);
   };
 
-  const handleNaturalLanguageToggle = (checked) => {
-    setIsNaturalLanguage(checked);
-    setSearchResults([]);
-    setSelectedRecord(null);
-    setDetailData(null);
-    setSearchText("");
-    setNlQuery("");
-    setSearchAttempted(false);
-  };
+  const renderDetailView = () => {
+    if (!detailData) return <Spin />;
 
-  const handleSearch = async () => {
-    setSearchAttempted(true);
+    const data = detailData.data || detailData;
+    const [type] = selectedRecord.id.split("-");
 
-    if (!searchText.trim() || !category) {
-      return;
-    }
+    switch (type) {
+      case "res":
+        return (
+          <Card
+            title={`Resource Details: ${data.name}`}
+            style={{ backgroundColor: darkMode ? "#1f1f1f" : "#fff" }}
+          >
+            <Descriptions bordered column={2}>
+              <Descriptions.Item label="Resource ID" span={2}>
+                {data.resourceId}
+              </Descriptions.Item>
+              <Descriptions.Item label="Name" span={2}>
+                {data.name}
+              </Descriptions.Item>
+              <Descriptions.Item label="Type">{data.type}</Descriptions.Item>
+              <Descriptions.Item label="Category">
+                {data.category}
+              </Descriptions.Item>
+              <Descriptions.Item label="Region">
+                {data.region}
+              </Descriptions.Item>
+              <Descriptions.Item label="Status">
+                {data.status}
+              </Descriptions.Item>
+              <Descriptions.Item label="Customer">
+                {data.customerName}
+              </Descriptions.Item>
+              <Descriptions.Item label="Account">
+                {data.accountName}
+              </Descriptions.Item>
+              <Descriptions.Item label="Active">
+                {data.isActive ? "Yes" : "No"}
+              </Descriptions.Item>
+              {data.cost && (
+                <Descriptions.Item label="Cost">${data.cost}</Descriptions.Item>
+              )}
+              <Descriptions.Item label="Created Date">
+                {data.createDateTime &&
+                  new Date(data.createDateTime).toLocaleString()}
+              </Descriptions.Item>
+              <Descriptions.Item label="Last Updated">
+                {data.updateDateTime &&
+                  new Date(data.updateDateTime).toLocaleString()}
+              </Descriptions.Item>
+              <Descriptions.Item label="Tags" span={2}>
+                {data.tags && Object.keys(data.tags).length > 0 ? (
+                  <Table
+                    dataSource={Object.entries(data.tags).map(
+                      ([key, value]) => ({
+                        key,
+                        value,
+                      })
+                    )}
+                    columns={[
+                      { title: "Key", dataIndex: "key" },
+                      { title: "Value", dataIndex: "value" },
+                    ]}
+                    pagination={false}
+                    size="small"
+                    style={{
+                      backgroundColor: darkMode ? "#141414" : "#fff",
+                      color: darkMode ? "#fff" : "#000",
+                    }}
+                  />
+                ) : (
+                  "No tags"
+                )}
+              </Descriptions.Item>
+              {data.metadata && (
+                <Descriptions.Item label="Metadata" span={2}>
+                  <pre style={{ whiteSpace: "pre-wrap" }}>
+                    {JSON.stringify(data.metadata, null, 2)}
+                  </pre>
+                </Descriptions.Item>
+              )}
+            </Descriptions>
+          </Card>
+        );
 
-    setIsSearching(true);
-    try {
-      let endpoint = "";
-      let params = {};
+      case "flow":
+        return (
+          <Card
+            title={`Approval Flow Details: ${data.name}`}
+            style={{ backgroundColor: darkMode ? "#1f1f1f" : "#fff" }}
+          >
+            <Descriptions bordered column={2}>
+              <Descriptions.Item label="Approval ID" span={2}>
+                {data.approvalId}
+              </Descriptions.Item>
+              <Descriptions.Item label="Name" span={2}>
+                {data.name}
+              </Descriptions.Item>
+              <Descriptions.Item label="Type">{data.type}</Descriptions.Item>
+              <Descriptions.Item label="Status">
+                <Tag
+                  color={getStatusTag(data.status, darkMode).color}
+                  style={{
+                    padding: "4px 12px",
+                    fontSize: "14px",
+                    borderRadius: "4px",
+                    margin: "0",
+                    minWidth: "90px",
+                    textAlign: "center",
+                    backgroundColor: darkMode
+                      ? `${getStatusTag(data.status, darkMode).color}22`
+                      : undefined,
+                    border: darkMode
+                      ? `1px solid ${getStatusTag(data.status, darkMode).color}`
+                      : undefined,
+                    color: darkMode
+                      ? getStatusTag(data.status, darkMode).color
+                      : undefined,
+                  }}
+                >
+                  {getStatusTag(data.status, darkMode).text}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="Created Date">
+                {data.createDateTime &&
+                  new Date(data.createDateTime).toLocaleString()}
+              </Descriptions.Item>
+              <Descriptions.Item label="Last Updated">
+                {data.updateDateTime &&
+                  new Date(data.updateDateTime).toLocaleString()}
+              </Descriptions.Item>
+              <Descriptions.Item label="Description" span={2}>
+                {data.description || "No description provided"}
+              </Descriptions.Item>
 
-      if (isNaturalLanguage) {
-        // Natural language search is not implemented in backend yet
-        console.log("Natural language search:", nlQuery);
-        return;
-      }
+              {/* Participants Section */}
+              <Descriptions.Item label="Participants" span={2}>
+                {data.participants && (
+                  <Table
+                    dataSource={data.participants}
+                    columns={[
+                      { title: "Profile ID", dataIndex: "profileId" },
+                      { title: "Name", dataIndex: "name" },
+                      { title: "Email", dataIndex: "email" },
+                      {
+                        title: "Status",
+                        dataIndex: "status",
+                        render: (status) => {
+                          const { color, text } = getStatusTag(
+                            status,
+                            darkMode
+                          );
+                          return (
+                            <Tag
+                              color={color}
+                              style={{
+                                padding: "4px 12px",
+                                fontSize: "14px",
+                                borderRadius: "4px",
+                                margin: "0",
+                                minWidth: "90px",
+                                textAlign: "center",
+                                backgroundColor: darkMode
+                                  ? `${color}22`
+                                  : undefined,
+                                border: darkMode
+                                  ? `1px solid ${color}`
+                                  : undefined,
+                                color: darkMode ? color : undefined,
+                              }}
+                            >
+                              {text}
+                            </Tag>
+                          );
+                        },
+                      },
+                      {
+                        title: "Created Date",
+                        dataIndex: "createDateTime",
+                        render: (date) =>
+                          date && new Date(date).toLocaleString(),
+                      },
+                    ]}
+                    pagination={false}
+                    size="small"
+                    style={{
+                      backgroundColor: darkMode ? "#141414" : "#fff",
+                      color: darkMode ? "#fff" : "#000",
+                    }}
+                  />
+                )}
+              </Descriptions.Item>
 
-      // Set endpoint and params based on category
-      switch (category) {
-        case "resource":
-          endpoint = "/api/Resource/search";
-          params = { q: searchText.toLowerCase() };
-          if (selectedOptions.length > 0) {
-            params.type = selectedOptions.join(",").toLowerCase();
-          }
-          break;
+              {/* Resources Section */}
+              <Descriptions.Item label="Resources" span={2}>
+                {data.resources && (
+                  <Table
+                    dataSource={data.resources}
+                    columns={[
+                      { title: "Resource ID", dataIndex: "resourceId" },
+                      { title: "Name", dataIndex: "name" },
+                      { title: "Type", dataIndex: "type" },
+                      {
+                        title: "Status",
+                        dataIndex: "status",
+                        render: (status) => {
+                          const { color, text } = getStatusTag(
+                            status,
+                            darkMode
+                          );
+                          return (
+                            <Tag
+                              color={color}
+                              style={{
+                                padding: "4px 12px",
+                                fontSize: "14px",
+                                borderRadius: "4px",
+                                margin: "0",
+                                minWidth: "90px",
+                                textAlign: "center",
+                                backgroundColor: darkMode
+                                  ? `${color}22`
+                                  : undefined,
+                                border: darkMode
+                                  ? `1px solid ${color}`
+                                  : undefined,
+                                color: darkMode ? color : undefined,
+                              }}
+                            >
+                              {text}
+                            </Tag>
+                          );
+                        },
+                      },
+                      {
+                        title: "Created Date",
+                        dataIndex: "createDateTime",
+                        render: (date) =>
+                          date && new Date(date).toLocaleString(),
+                      },
+                    ]}
+                    pagination={false}
+                    size="small"
+                    style={{
+                      backgroundColor: darkMode ? "#141414" : "#fff",
+                      color: darkMode ? "#fff" : "#000",
+                    }}
+                  />
+                )}
+              </Descriptions.Item>
+            </Descriptions>
+          </Card>
+        );
 
-        case "tags":
-          endpoint = "/api/ResourceTag/search";
-          params = {
-            key:
-              selectedOptions.length > 0
-                ? selectedOptions.join(",").toLowerCase()
-                : undefined,
-            value: searchText.toLowerCase(),
-          };
-          break;
+      case "pol":
+        return (
+          <Card
+            title={`Policy Details: ${data.name}`}
+            style={{ backgroundColor: darkMode ? "#1f1f1f" : "#fff" }}
+          >
+            <Descriptions bordered column={2}>
+              {/* Primary Information */}
+              <Descriptions.Item label="Policy ID" span={2}>
+                {data.policyId}
+              </Descriptions.Item>
+              <Descriptions.Item label="Name" span={2}>
+                {data.name}
+              </Descriptions.Item>
+              <Descriptions.Item label="Type">{data.type}</Descriptions.Item>
+              <Descriptions.Item label="Status">
+                <Tag color={getStatusColor(data.status, darkMode)}>
+                  {data.status}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="Description" span={2}>
+                {data.description || "No description provided"}
+              </Descriptions.Item>
 
-        case "approvalFlow":
-          endpoint = "/api/ApprovalFlow/search";
-          params = {
-            name: searchText.toLowerCase(),
-          };
-          break;
+              {/* Ownership Information */}
+              <Descriptions.Item label="Created By">
+                {data.createdBy}
+              </Descriptions.Item>
+              <Descriptions.Item label="Customer">
+                {data.customerName}
+              </Descriptions.Item>
+              <Descriptions.Item label="Account">
+                {data.accountName}
+              </Descriptions.Item>
 
-        case "policy":
-          endpoint = "/api/Policy/search";
-          params = {
-            name: searchText.toLowerCase(),
-          };
-          break;
+              {/* Timestamps */}
+              <Descriptions.Item label="Created Date">
+                {data.createDateTime &&
+                  new Date(data.createDateTime).toLocaleString()}
+              </Descriptions.Item>
+              <Descriptions.Item label="Last Updated">
+                {data.updateDateTime &&
+                  new Date(data.updateDateTime).toLocaleString()}
+              </Descriptions.Item>
 
-        case "all":
-          try {
-            const [resourceRes, tagRes, approvalRes, policyRes] =
-              await Promise.all([
-                apiCall({
-                  method: "GET",
-                  url: "/api/Resource/search",
-                  params: { q: searchText.toLowerCase() },
-                }),
-                apiCall({
-                  method: "GET",
-                  url: "/api/ResourceTag/search",
-                  params: { value: searchText.toLowerCase() },
-                }),
-                apiCall({
-                  method: "GET",
-                  url: "/api/ApprovalFlow/search",
-                  params: { name: searchText.toLowerCase() },
-                }),
-                apiCall({
-                  method: "GET",
-                  url: "/api/Policy/search",
-                  params: { name: searchText.toLowerCase() },
-                }),
-              ]);
+              {/* Associated Resources */}
+              <Descriptions.Item label="Associated Resources" span={2}>
+                {data.resources?.length > 0 ? (
+                  <Table
+                    dataSource={data.resources}
+                    columns={[
+                      { title: "Resource ID", dataIndex: "resourceId" },
+                      { title: "Name", dataIndex: "resourceName" },
+                      { title: "Type", dataIndex: "resourceType" },
+                      { title: "Status", dataIndex: "status" },
+                    ]}
+                    pagination={false}
+                    size="small"
+                    style={{
+                      backgroundColor: darkMode ? "#141414" : "#fff",
+                      color: darkMode ? "#fff" : "#000",
+                    }}
+                  />
+                ) : (
+                  "No resources associated with this policy"
+                )}
+              </Descriptions.Item>
 
-            const allResults = [
-              ...(resourceRes || []).map((r) => ({
-                id: `res-${r.id}`,
-                text: `Resource: ${r.name} (${r.type}) - ${r.resourceId}`,
-              })),
-              ...(tagRes || []).map((t) => ({
-                id: `tag-${t.id}`,
-                text: `Tag: ${t.key}=${t.value} - ${
-                  t.resourceName || "Unknown Resource"
-                }`,
-              })),
-              ...(approvalRes || []).map((a) => ({
-                id: `flow-${a.id}`,
-                text: `Approval Flow: ${a.name} (${a.type}) - ${a.status}${
-                  a.participants && a.participants.length > 0
-                    ? ` | Approvers: ${a.participants
-                        .map((p) => `${p.userName} (${p.status || "Pending"})`)
-                        .join(", ")}`
-                    : " | No approvers"
-                }`,
-              })),
-              ...(policyRes || []).map((p) => ({
-                id: `pol-${p.id}`,
-                text: `Policy: ${p.name} (${p.type})`,
-              })),
-            ];
+              {/* Policy Rules */}
+              {data.rules && (
+                <Descriptions.Item label="Policy Rules" span={2}>
+                  <pre
+                    style={{
+                      whiteSpace: "pre-wrap",
+                      backgroundColor: darkMode ? "#141414" : "#f5f5f5",
+                      padding: "12px",
+                      borderRadius: "4px",
+                      color: darkMode ? "#fff" : "#000",
+                    }}
+                  >
+                    {JSON.stringify(data.rules, null, 2)}
+                  </pre>
+                </Descriptions.Item>
+              )}
+            </Descriptions>
+          </Card>
+        );
 
-            setSearchResults(allResults);
-            return;
-          } catch (error) {
-            console.error("Error in combined search:", error);
-            return;
-          }
-          break;
+      case "tag":
+        return (
+          <Card
+            title={`Tag Details: ${data.key}: ${data.value}`}
+            style={{ backgroundColor: darkMode ? "#1f1f1f" : "#fff" }}
+          >
+            <Descriptions bordered column={2}>
+              {/* Tag Information */}
+              <Descriptions.Item label="Key" span={2}>
+                {data.key}
+              </Descriptions.Item>
+              <Descriptions.Item label="Value" span={2}>
+                {data.value}
+              </Descriptions.Item>
+              <Descriptions.Item label="Status" span={2}>
+                <Tag
+                  color={getStatusTag(data.status, darkMode).color}
+                  style={{
+                    padding: "4px 12px",
+                    fontSize: "14px",
+                    borderRadius: "4px",
+                    margin: "0",
+                    minWidth: "90px",
+                    textAlign: "center",
+                    backgroundColor: darkMode
+                      ? `${getStatusTag(data.status, darkMode).color}22`
+                      : undefined,
+                    border: darkMode
+                      ? `1px solid ${getStatusTag(data.status, darkMode).color}`
+                      : undefined,
+                    color: darkMode
+                      ? getStatusTag(data.status, darkMode).color
+                      : undefined,
+                  }}
+                >
+                  {getStatusTag(data.status, darkMode).text}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="Created Date">
+                {data.createDateTime &&
+                  new Date(data.createDateTime).toLocaleString()}
+              </Descriptions.Item>
+              <Descriptions.Item label="Last Updated">
+                {data.updateDateTime &&
+                  new Date(data.updateDateTime).toLocaleString()}
+              </Descriptions.Item>
 
-        default:
-          console.error("Invalid category selected");
-          return;
-      }
+              {/* Associated Resources Section */}
+              <Descriptions.Item label="Associated Resources" span={2}>
+                <div style={{ marginBottom: "16px" }}>
+                  <Button
+                    type="primary"
+                    onClick={() => loadAssociatedResources(data.id)}
+                    loading={isLoadingResources}
+                  >
+                    View all associated resources
+                  </Button>
+                </div>
 
-      const response = await apiCall({
-        method: "GET",
-        url: endpoint,
-        params,
-      });
+                {isLoadingResources && (
+                  <div style={{ textAlign: "center", padding: "20px" }}>
+                    <Spin />
+                  </div>
+                )}
 
-      let formattedResults = [];
-      if (response) {
-        switch (category) {
-          case "resource":
-            formattedResults = response.map((r) => ({
-              id: `res-${r.id}`,
-              text: `${r.name} (${r.type}) - ${r.resourceId}`,
-            }));
-            break;
+                {associatedResources && (
+                  <Table
+                    dataSource={associatedResources}
+                    columns={[
+                      { title: "Resource ID", dataIndex: "resourceId" },
+                      { title: "Name", dataIndex: "name" },
+                      { title: "Type", dataIndex: "type" },
+                      {
+                        title: "Status",
+                        dataIndex: "status",
+                        render: (status) => {
+                          const { color, text } = getStatusTag(
+                            status,
+                            darkMode
+                          );
+                          return (
+                            <Tag
+                              color={color}
+                              style={{
+                                padding: "4px 12px",
+                                fontSize: "14px",
+                                borderRadius: "4px",
+                                margin: "0",
+                                minWidth: "90px",
+                                textAlign: "center",
+                                backgroundColor: darkMode
+                                  ? `${color}22`
+                                  : undefined,
+                                border: darkMode
+                                  ? `1px solid ${color}`
+                                  : undefined,
+                                color: darkMode ? color : undefined,
+                              }}
+                            >
+                              {text}
+                            </Tag>
+                          );
+                        },
+                      },
+                      {
+                        title: "Created Date",
+                        dataIndex: "createDateTime",
+                        render: (date) =>
+                          date && new Date(date).toLocaleString(),
+                      },
+                    ]}
+                    pagination={false}
+                    size="small"
+                    style={{
+                      backgroundColor: darkMode ? "#141414" : "#fff",
+                      color: darkMode ? "#fff" : "#000",
+                    }}
+                  />
+                )}
+              </Descriptions.Item>
+            </Descriptions>
+          </Card>
+        );
 
-          case "tags":
-            formattedResults = response.map((t) => ({
-              id: `tag-${t.id}`,
-              text: `${t.key}=${t.value} - ${
-                t.resourceName || "Unknown Resource"
-              }`,
-            }));
-            break;
-
-          case "approvalFlow":
-            formattedResults = response.map((a) => ({
-              id: `flow-${a.id}`,
-              text: `${a.name} (${a.type}) - ${a.status}`,
-            }));
-            break;
-
-          case "policy":
-            formattedResults = response.map((p) => ({
-              id: `pol-${p.id}`,
-              text: `${p.name} (${p.type})`,
-            }));
-            break;
-        }
-      }
-
-      setSearchResults(formattedResults);
-    } catch (error) {
-      console.error("Search error:", error);
-    } finally {
-      setIsSearching(false);
+      default:
+        return <Empty description="No details available" />;
     }
   };
 
   const exportToJson = async () => {
     setIsExporting(true);
     try {
-      const detailedResults = await Promise.all(
-        searchResults.map(async (item) => {
-          const [type, id] = item.id.split("-");
-          let endpoint = "";
-
-          switch (type) {
-            case "res":
-              endpoint = `/api/Resource/${id}`;
-              break;
-            case "tag":
-              endpoint = `/api/ResourceTag/${id}`;
-              break;
-            case "flow":
-              endpoint = `/api/ApprovalFlow/${id}`;
-              break;
-            case "pol":
-              endpoint = `/api/Policy/${id}`;
-              break;
-          }
-
-          try {
-            const details = await apiCall({
-              method: "GET",
-              url: endpoint,
-            });
-            return {
-              id: item.id,
-              type,
-              summary: item.text,
-              details,
-            };
-          } catch (error) {
-            console.error(`Error fetching details for ${item.id}:`, error);
-            return {
-              id: item.id,
-              type,
-              summary: item.text,
-              details: null,
-              error: "Failed to fetch details",
-            };
-          }
-        })
-      );
-
-      const jsonString = JSON.stringify(detailedResults, null, 2);
-      const blob = new Blob([jsonString], { type: "application/json" });
+      const jsonStr = JSON.stringify(searchResults, null, 2);
+      const blob = new Blob([jsonStr], { type: "application/json" });
       const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "search-results-detailed.json";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "search-results.json";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error("Error exporting to JSON:", error);
@@ -368,172 +927,30 @@ const AdvancedSearch = () => {
   const exportToCsv = async () => {
     setIsExporting(true);
     try {
-      const formatValue = (value) => {
-        if (value === null || value === undefined) return "";
-        const stringValue = String(value);
-        return stringValue.includes(",") ||
-          stringValue.includes("\n") ||
-          stringValue.includes('"')
-          ? `"${stringValue.replace(/"/g, '""')}"`
-          : stringValue;
-      };
-
-      const detailedResults = await Promise.all(
-        searchResults.map(async (item) => {
+      const csvContent = searchResults
+        .map((item) => {
           const [type, id] = item.id.split("-");
-          let endpoint = "";
-
-          switch (type) {
-            case "res":
-              endpoint = `/api/Resource/${id}`;
-              break;
-            case "tag":
-              endpoint = `/api/ResourceTag/${id}`;
-              break;
-            case "flow":
-              endpoint = `/api/ApprovalFlow/${id}`;
-              break;
-            case "pol":
-              endpoint = `/api/Policy/${id}`;
-              break;
-          }
-
-          try {
-            return await apiCall({
-              method: "GET",
-              url: endpoint,
-            });
-          } catch (error) {
-            console.error(`Error fetching details for ${item.id}:`, error);
-            return null;
-          }
+          const category = item.category || "Unknown";
+          const description = item.description || "";
+          // Escape quotes in text and description
+          const escapedText = `"${item.text.replace(/"/g, '""')}"`;
+          const escapedDescription = `"${description.replace(/"/g, '""')}"`;
+          return `${type},${id},${escapedText},${category},${escapedDescription}`;
         })
-      );
-
-      let rows = [];
-
-      // Group results by type
-      const groupedResults = detailedResults.reduce((acc, result, index) => {
-        if (!result) return acc;
-        const type = searchResults[index].id.split("-")[0];
-        if (!acc[type]) acc[type] = [];
-        acc[type].push(result);
-        return acc;
-      }, {});
-
-      // Generate CSV sections for each type
-      Object.entries(groupedResults).forEach(([type, items]) => {
-        rows.push([`${type.toUpperCase()} Records`], []);
-
-        switch (type) {
-          case "res":
-            rows.push([
-              "ID",
-              "Name",
-              "Type",
-              "Resource ID",
-              "Status",
-              "Region",
-              "Category",
-              "Created Date",
-              "Last Modified",
-              "Description",
-              "Tags",
-            ]);
-            items.forEach((item) => {
-              rows.push([
-                formatValue(item.id),
-                formatValue(item.name),
-                formatValue(item.type),
-                formatValue(item.resourceId),
-                formatValue(item.status),
-                formatValue(item.region),
-                formatValue(item.category),
-                formatValue(item.createdDate),
-                formatValue(item.lastModifiedDate),
-                formatValue(item.description),
-                formatValue(
-                  item.tags
-                    ? item.tags.map((t) => `${t.key}=${t.value}`).join("; ")
-                    : ""
-                ),
-              ]);
-            });
-            break;
-
-          case "flow":
-            rows.push([
-              "ID",
-              "Name",
-              "Type",
-              "Status",
-              "Created By",
-              "Policy",
-              "Description",
-              "Participants",
-            ]);
-            items.forEach((item) => {
-              rows.push([
-                formatValue(item.id),
-                formatValue(item.name),
-                formatValue(item.type),
-                formatValue(item.status),
-                formatValue(item.createdByName),
-                formatValue(item.policyName),
-                formatValue(item.description),
-                formatValue(
-                  item.participants
-                    ? item.participants
-                        .map(
-                          (p) =>
-                            `${p.userName} (${p.role}, ${p.status}, Order: ${p.order})`
-                        )
-                        .join("; ")
-                    : ""
-                ),
-              ]);
-            });
-            break;
-
-          case "tag":
-            rows.push(["ID", "Key", "Value", "Resource Name", "Status"]);
-            items.forEach((item) => {
-              rows.push([
-                formatValue(item.id),
-                formatValue(item.key),
-                formatValue(item.value),
-                formatValue(item.resourceName),
-                formatValue(item.status),
-              ]);
-            });
-            break;
-
-          case "pol":
-            rows.push(["ID", "Name", "Type", "Value 1", "Value 2", "Status"]);
-            items.forEach((item) => {
-              rows.push([
-                formatValue(item.id),
-                formatValue(item.name),
-                formatValue(item.type),
-                formatValue(item.value1),
-                formatValue(item.value2),
-                formatValue(item.isActive ? "Active" : "Inactive"),
-              ]);
-            });
-            break;
+        .join("\n");
+      const blob = new Blob(
+        [`Type,ID,Text,Category,Description\n${csvContent}`],
+        {
+          type: "text/csv",
         }
-        rows.push([], []); // Add spacing between sections
-      });
-
-      const csvContent = rows.map((row) => row.join(",")).join("\n");
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      );
       const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "search-results-detailed.csv";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "search-results.csv";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error("Error exporting to CSV:", error);
@@ -542,560 +959,254 @@ const AdvancedSearch = () => {
     }
   };
 
-  // Render detail view based on record type
-  const renderDetailView = () => {
-    if (!detailData) return null;
-
-    const { type, data } = detailData;
-
-    return (
-      <Card
-        style={{
-          background: darkMode ? "#1f1f1f" : "#fff",
-          color: darkMode ? "#fff" : "#000",
-          border: `1px solid ${darkMode ? "#434343" : "#d9d9d9"}`,
-          boxShadow: `0 2px 8px ${
-            darkMode ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.1)"
-          }`,
-        }}
-      >
-        <Space direction="vertical" size="large" style={{ width: "100%" }}>
-          {type === "res" && (
-            <>
-              <Title level={4} style={{ color: darkMode ? "#fff" : "#000" }}>
-                Resource Details
-              </Title>
-              <Row gutter={[16, 16]}>
-                <Col span={12}>
-                  <strong>Name:</strong> {data.name || "N/A"}
-                </Col>
-                <Col span={12}>
-                  <strong>Type:</strong> {data.type || "N/A"}
-                </Col>
-                <Col span={12}>
-                  <strong>Resource ID:</strong> {data.resourceId || "N/A"}
-                </Col>
-                <Col span={12}>
-                  <strong>Status:</strong> {data.status || "Unknown"}
-                </Col>
-                <Col span={12}>
-                  <strong>Region:</strong> {data.region || "Not specified"}
-                </Col>
-                <Col span={12}>
-                  <strong>Category:</strong> {data.category || "Uncategorized"}
-                </Col>
-                <Col span={12}>
-                  <strong>Created Date:</strong>{" "}
-                  {data.createdDate
-                    ? new Date(data.createdDate).toLocaleDateString()
-                    : "N/A"}
-                </Col>
-                <Col span={12}>
-                  <strong>Last Modified:</strong>{" "}
-                  {data.lastModifiedDate
-                    ? new Date(data.lastModifiedDate).toLocaleDateString()
-                    : "N/A"}
-                </Col>
-                <Col span={24}>
-                  <strong>Description:</strong>{" "}
-                  {data.description || "No description available"}
-                </Col>
-                {data.tags && data.tags.length > 0 && (
-                  <Col span={24}>
-                    <strong>Tags:</strong>{" "}
-                    {data.tags
-                      .map((tag) => `${tag.key}=${tag.value}`)
-                      .join(", ")}
-                  </Col>
-                )}
-              </Row>
-            </>
-          )}
-
-          {type === "tag" && (
-            <>
-              <Title level={4} style={{ color: darkMode ? "#fff" : "#000" }}>
-                Tag Details
-              </Title>
-              <Row gutter={[16, 16]}>
-                <Col span={12}>
-                  <strong>Key:</strong> {data.key}
-                </Col>
-                <Col span={12}>
-                  <strong>Value:</strong> {data.value}
-                </Col>
-                <Col span={12}>
-                  <strong>Resource Name:</strong> {data.resourceName}
-                </Col>
-                <Col span={12}>
-                  <strong>Status:</strong> {data.status}
-                </Col>
-              </Row>
-            </>
-          )}
-
-          {type === "flow" && (
-            <>
-              <Title level={4} style={{ color: darkMode ? "#fff" : "#000" }}>
-                Approval Flow Details
-              </Title>
-              <Row gutter={[16, 16]}>
-                <Col span={12}>
-                  <strong>Name:</strong> {data.name || "N/A"}
-                </Col>
-                <Col span={12}>
-                  <strong>Type:</strong> {data.type || "N/A"}
-                </Col>
-                <Col span={12}>
-                  <strong>Status:</strong> {data.status || "Unknown"}
-                </Col>
-                <Col span={12}>
-                  <strong>Created By:</strong> {data.createdByName || "N/A"}
-                </Col>
-                <Col span={24}>
-                  <strong>Policy:</strong> {data.policyName || "N/A"}
-                </Col>
-                <Col span={24}>
-                  <div
-                    style={{
-                      marginTop: "16px",
-                      padding: "16px",
-                      backgroundColor: darkMode ? "#141414" : "#f5f5f5",
-                      borderRadius: "8px",
-                      border: `1px solid ${darkMode ? "#434343" : "#d9d9d9"}`,
-                    }}
-                  >
-                    <Title
-                      level={5}
-                      style={{
-                        color: darkMode ? "#fff" : "#000",
-                        marginTop: 0,
-                        marginBottom: "16px",
-                      }}
-                    >
-                      Approval Participants
-                    </Title>
-                    {data.participants && data.participants.length > 0 ? (
-                      <Row gutter={[16, 16]}>
-                        {data.participants.map((participant, index) => (
-                          <Col span={24} key={index}>
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                padding: "12px 16px",
-                                backgroundColor: darkMode ? "#1f1f1f" : "#fff",
-                                borderRadius: "4px",
-                                border: `1px solid ${
-                                  darkMode ? "#434343" : "#d9d9d9"
-                                }`,
-                              }}
-                            >
-                              <div>
-                                <div
-                                  style={{
-                                    fontWeight: "500",
-                                    color: darkMode ? "#fff" : "#000",
-                                  }}
-                                >
-                                  {participant.userName || "Unknown User"}
-                                </div>
-                                <div
-                                  style={{
-                                    fontSize: "12px",
-                                    color: darkMode ? "#999" : "#666",
-                                    marginTop: "4px",
-                                  }}
-                                >
-                                  {participant.role || "No role specified"}
-                                  {participant.order &&
-                                    ` • Order: ${participant.order}`}
-                                </div>
-                              </div>
-                              <div
-                                style={{
-                                  padding: "4px 12px",
-                                  borderRadius: "12px",
-                                  fontSize: "12px",
-                                  backgroundColor: getStatusColor(
-                                    participant.status,
-                                    darkMode
-                                  ).bg,
-                                  color: getStatusColor(
-                                    participant.status,
-                                    darkMode
-                                  ).text,
-                                  fontWeight: "500",
-                                }}
-                              >
-                                {participant.status || "Pending"}
-                              </div>
-                            </div>
-                          </Col>
-                        ))}
-                      </Row>
-                    ) : (
-                      <div
-                        style={{
-                          color: darkMode ? "#999" : "#666",
-                          textAlign: "center",
-                          padding: "16px",
-                        }}
-                      >
-                        No participants assigned to this approval flow
-                      </div>
-                    )}
-                  </div>
-                </Col>
-              </Row>
-            </>
-          )}
-
-          {type === "pol" && (
-            <>
-              <Title level={4} style={{ color: darkMode ? "#fff" : "#000" }}>
-                Policy Details
-              </Title>
-              <Row gutter={[16, 16]}>
-                <Col span={12}>
-                  <strong>Name:</strong> {data.name}
-                </Col>
-                <Col span={12}>
-                  <strong>Type:</strong> {data.type}
-                </Col>
-                <Col span={12}>
-                  <strong>Value 1:</strong> {data.value1}
-                </Col>
-                <Col span={12}>
-                  <strong>Value 2:</strong> {data.value2}
-                </Col>
-                <Col span={12}>
-                  <strong>Status:</strong>{" "}
-                  {data.isActive ? "Active" : "Inactive"}
-                </Col>
-              </Row>
-            </>
-          )}
-        </Space>
-      </Card>
-    );
-  };
-
-  // Table columns with built-in filtering
-  const columns = [
-    {
-      title: "Search Results",
-      dataIndex: "text",
-      key: "text",
-      filterDropdown: ({
-        setSelectedKeys,
-        selectedKeys,
-        confirm,
-        clearFilters,
-      }) => (
-        <div style={{ padding: 8 }}>
-          <Input
-            placeholder="Filter results"
-            value={selectedKeys[0]}
-            onChange={(e) =>
-              setSelectedKeys(e.target.value ? [e.target.value] : [])
-            }
-            onPressEnter={() => confirm()}
-            style={{ width: 188, marginBottom: 8, display: "block" }}
-          />
-          <Space>
-            <Button
-              type="primary"
-              onClick={() => confirm()}
-              icon={<SearchOutlined />}
-              size="small"
-              style={{ width: 90 }}
-            >
-              Filter
-            </Button>
-            <Button
-              onClick={() => clearFilters()}
-              size="small"
-              style={{ width: 90 }}
-            >
-              Reset
-            </Button>
-          </Space>
-        </div>
-      ),
-      onFilter: (value, record) =>
-        record.text.toString().toLowerCase().includes(value.toLowerCase()),
-      filterIcon: (filtered) => (
-        <SearchOutlined style={{ color: filtered ? "#1890ff" : undefined }} />
-      ),
-      render: (text) => (
-        <div style={{ color: darkMode ? "#fff" : "#000" }}>{text}</div>
-      ),
-    },
-  ];
-
   return (
-    <div
-      style={{
-        padding: "24px",
-        background: darkMode ? "#141414" : "#f0f2f5",
-        minHeight: "100vh",
-      }}
-    >
-      <Row justify="center">
-        <Col xs={24} sm={24} md={20} lg={16} xl={12}>
-          <div style={{ marginTop: "60px" }}>
-            {/* Search Controls */}
-            <div style={{ marginBottom: "24px" }}>
-              {isNaturalLanguage ? (
-                <TextArea
-                  placeholder="Enter your search query in natural language..."
-                  value={nlQuery}
-                  onChange={(e) => setNlQuery(e.target.value)}
-                  style={{
-                    backgroundColor: darkMode ? "#1f1f1f" : "#fff",
-                    borderColor: darkMode ? "#434343" : undefined,
-                    color: darkMode ? "#fff" : undefined,
-                    height: "100px",
-                  }}
-                />
-              ) : (
-                <Space.Compact style={{ width: "100%" }}>
-                  <Input
-                    placeholder="Search..."
-                    value={searchText}
-                    onChange={(e) => setSearchText(e.target.value)}
-                    status={
-                      !searchText.trim() && searchAttempted ? "error" : ""
-                    }
-                    required
-                    style={{
-                      height: "40px",
-                      backgroundColor: darkMode ? "#1f1f1f" : "#fff",
-                      borderColor: darkMode ? "#434343" : undefined,
-                      color: darkMode ? "#fff" : undefined,
-                      width: "60%",
-                    }}
-                  />
-                  <Select
-                    placeholder="Select Category *"
-                    status={!category && searchAttempted ? "error" : ""}
-                    required
-                    style={{
-                      width: "20%",
-                      marginLeft: "8px",
-                      height: "40px",
-                      backgroundColor: darkMode ? "#1f1f1f" : "#fff",
-                      color: darkMode ? "#fff" : "#000",
-                    }}
-                    onChange={(value) => {
-                      setCategory(value);
-                      setSelectedOptions([]);
-                    }}
-                    value={category}
-                    dropdownStyle={{
-                      backgroundColor: darkMode ? "#1f1f1f" : "#fff",
-                    }}
-                    popupClassName={darkMode ? "dark-select-dropdown" : ""}
-                  >
-                    <Option value="all">All</Option>
-                    <Option value="resource">Resources</Option>
-                    <Option value="tags">Tags</Option>
-                    <Option value="approvalFlow">Approval Flow</Option>
-                    <Option value="policy">Policies</Option>
-                  </Select>
-                  <Select
-                    mode="multiple"
-                    placeholder="Select Options"
-                    style={{
-                      width: "40%",
-                      marginLeft: "8px",
-                      height: "40px",
-                      backgroundColor: darkMode ? "#1f1f1f" : "#fff",
-                      color: darkMode ? "#fff" : "#000",
-                    }}
-                    maxTagCount={2}
-                    maxTagTextLength={12}
-                    maxTagPlaceholder={(omittedValues) =>
-                      `+ ${omittedValues.length} more...`
-                    }
-                    onChange={setSelectedOptions}
-                    value={selectedOptions}
-                    disabled={!category || category === "all"}
-                    dropdownStyle={{
-                      backgroundColor: darkMode ? "#1f1f1f" : "#fff",
-                    }}
-                    popupClassName={darkMode ? "dark-select-dropdown" : ""}
-                  >
-                    {getCategoryOptions().map((option) => (
-                      <Option key={option} value={option}>
-                        {option}
-                      </Option>
-                    ))}
-                  </Select>
-                  <Button
-                    type="primary"
-                    icon={<SearchOutlined />}
-                    onClick={handleSearch}
-                    disabled={!searchText.trim() || !category}
-                    title={
-                      !searchText.trim()
-                        ? "Please enter search text"
-                        : !category
-                        ? "Please select a category"
-                        : ""
-                    }
-                    style={{
-                      height: "40px",
-                      marginLeft: "8px",
-                      width: "40px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  />
-                </Space.Compact>
-              )}
-            </div>
-
-            {/* Natural Language Toggle */}
-            <div
+    <div className="advanced-search-container">
+      <Row>
+        <Col xs={24} sm={24} md={24} lg={24} xl={24}>
+          <div style={{ padding: "0 24px" }}>
+            <Title
+              level={2}
               style={{
-                marginBottom: "24px",
-                padding: "16px",
-                background: darkMode ? "#1f1f1f" : "#fff",
-                borderRadius: "8px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
+                color: darkMode ? "#fff" : "#000",
+                marginBottom: "110px",
+                marginTop: "0",
               }}
             >
-              <Space align="center" size="large">
-                <span
+              Search
+            </Title>
+
+            <div className="search-section">
+              <Space.Compact style={{ width: "100%" }}>
+                <Input
+                  placeholder="Enter search term..."
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  onPressEnter={handleSearch}
                   style={{
+                    height: "40px",
+                    backgroundColor: darkMode ? "#1f1f1f" : "#fff",
+                    color: darkMode ? "#fff" : undefined,
+                    width: "45%",
+                  }}
+                />
+                <Select
+                  placeholder="Select Category *"
+                  status={!category && searchAttempted ? "error" : ""}
+                  required
+                  style={{
+                    width: "15%",
+                    marginLeft: "8px",
+                    height: "40px",
+                    backgroundColor: darkMode ? "#1f1f1f" : "#fff",
                     color: darkMode ? "#fff" : "#000",
-                    fontSize: "14px",
+                  }}
+                  onChange={(value) => {
+                    setCategory(value);
+                    setSelectedOptions([]);
+                  }}
+                  value={category}
+                  dropdownStyle={{
+                    backgroundColor: darkMode ? "#1f1f1f" : "#fff",
+                  }}
+                  popupClassName={darkMode ? "dark-select-dropdown" : ""}
+                >
+                  <Option value="all">All</Option>
+                  <Option value="resource">Resources</Option>
+                  <Option value="tags">Tags</Option>
+                  <Option value="approvalFlow">Approval Flow</Option>
+                  <Option value="policy">Policies</Option>
+                </Select>
+                <Select
+                  mode="multiple"
+                  placeholder="Select Options"
+                  style={{
+                    width: "30%",
+                    marginLeft: "8px",
+                    height: "40px",
+                    backgroundColor: darkMode ? "#1f1f1f" : "#fff",
+                    color: darkMode ? "#fff" : "#000",
+                  }}
+                  maxTagCount={2}
+                  maxTagTextLength={12}
+                  maxTagPlaceholder={(omittedValues) =>
+                    `+ ${omittedValues.length} more...`
+                  }
+                  onChange={setSelectedOptions}
+                  value={selectedOptions}
+                  disabled={!category || category === "all"}
+                  dropdownStyle={{
+                    backgroundColor: darkMode ? "#1f1f1f" : "#fff",
+                  }}
+                  popupClassName={darkMode ? "dark-select-dropdown" : ""}
+                >
+                  {getCategoryOptions().map((option) => (
+                    <Option key={option} value={option}>
+                      {option}
+                    </Option>
+                  ))}
+                </Select>
+                <Button
+                  icon={<SearchOutlined />}
+                  iconPosition="end"
+                  onClick={handleSearch}
+                  loading={isSearching}
+                  style={{
+                    marginLeft: "8px",
+                    height: "40px",
                   }}
                 >
-                  Search with natural language
-                </span>
-                <Switch
-                  checked={isNaturalLanguage}
-                  onChange={handleNaturalLanguageToggle}
-                  style={{ marginLeft: "8px" }}
-                />
-              </Space>
+                  Search
+                </Button>
+              </Space.Compact>
             </div>
 
             {/* Results Section */}
-            {(searchResults.length > 0 || isSearching) && (
-              <div style={{ marginTop: "24px", position: "relative" }}>
-                {isSearching && (
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: "50%",
-                      left: "50%",
-                      transform: "translate(-50%, -50%)",
-                      zIndex: 1000,
-                      backgroundColor: darkMode
-                        ? "rgba(0,0,0,0.65)"
-                        : "rgba(255,255,255,0.65)",
-                      padding: "20px",
-                      borderRadius: "8px",
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      gap: "10px",
-                    }}
-                  >
-                    <Spin
-                      indicator={
-                        <LoadingOutlined style={{ fontSize: 24 }} spin />
-                      }
-                    />
-                    <span style={{ color: darkMode ? "#fff" : "#000" }}>
-                      Searching...
-                    </span>
-                  </div>
-                )}
-                {selectedRecord ? (
-                  <>
+            {searchResults.length > 0 && !selectedRecord && (
+              <div style={{ marginTop: "24px" }}>
+                <div
+                  style={{
+                    marginBottom: "16px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <Text style={{ color: darkMode ? "#fff" : "#000" }}>
+                    Found {searchResults.length} results
+                  </Text>
+                  <Space>
                     <Button
-                      icon={<ArrowLeftOutlined />}
-                      onClick={handleBackToResults}
-                      style={{ marginBottom: "16px" }}
-                    >
-                      Back to Results
-                    </Button>
-                    {renderDetailView()}
-                  </>
-                ) : (
-                  <>
-                    {searchResults.length > 0 && (
-                      <Space
-                        style={{
-                          marginBottom: "16px",
-                          display: "flex",
-                          justifyContent: "flex-end",
-                        }}
-                      >
-                        <Tooltip title="Export as JSON">
-                          <Button
-                            icon={<FileTextOutlined />}
-                            onClick={exportToJson}
-                            loading={isExporting}
-                            style={{
-                              backgroundColor: darkMode ? "#1f1f1f" : "#fff",
-                              borderColor: darkMode ? "#434343" : undefined,
-                              color: darkMode ? "#fff" : undefined,
-                            }}
-                          >
-                            JSON
-                          </Button>
-                        </Tooltip>
-                        <Tooltip title="Export as CSV">
-                          <Button
-                            icon={<FileExcelOutlined />}
-                            onClick={exportToCsv}
-                            loading={isExporting}
-                            style={{
-                              backgroundColor: darkMode ? "#1f1f1f" : "#fff",
-                              borderColor: darkMode ? "#434343" : undefined,
-                              color: darkMode ? "#fff" : undefined,
-                            }}
-                          >
-                            CSV
-                          </Button>
-                        </Tooltip>
-                      </Space>
-                    )}
-                    <Table
-                      columns={columns}
-                      dataSource={searchResults}
-                      rowKey="id"
-                      onRow={(record) => ({
-                        onClick: () => handleRowClick(record),
-                        style: { cursor: "pointer" },
-                      })}
+                      icon={<DownloadOutlined />}
+                      onClick={exportToJson}
+                      loading={isExporting}
                       style={{
                         backgroundColor: darkMode ? "#1f1f1f" : "#fff",
+                        borderColor: darkMode ? "#333" : "#d9d9d9",
                         color: darkMode ? "#fff" : "#000",
-                        opacity: isSearching ? 0.6 : 1,
                       }}
-                      className={`search-results-table ${
-                        darkMode ? "dark" : "light"
-                      }`}
-                      pagination={{
-                        pageSize: 10,
-                        showSizeChanger: true,
-                        showQuickJumper: true,
+                    >
+                      Export JSON
+                    </Button>
+                    <Button
+                      icon={<FileExcelOutlined />}
+                      onClick={exportToCsv}
+                      loading={isExporting}
+                      style={{
+                        backgroundColor: darkMode ? "#1f1f1f" : "#fff",
+                        borderColor: darkMode ? "#333" : "#d9d9d9",
+                        color: darkMode ? "#fff" : "#000",
                       }}
-                    />
-                  </>
-                )}
+                    >
+                      Export CSV
+                    </Button>
+                  </Space>
+                </div>
+                <List
+                  dataSource={searchResults}
+                  renderItem={(item) => (
+                    <List.Item
+                      key={item.id}
+                      onClick={() => handleRowClick(item)}
+                      style={{
+                        cursor: "pointer",
+                        backgroundColor: darkMode ? "#1f1f1f" : "#fff",
+                        padding: "12px",
+                        borderRadius: "4px",
+                        marginBottom: "8px",
+                        border: darkMode
+                          ? "1px solid #333"
+                          : "1px solid #e8e8e8",
+                      }}
+                      className="search-result-item"
+                    >
+                      <List.Item.Meta
+                        title={
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                            }}
+                          >
+                            <span style={{ color: darkMode ? "#fff" : "#000" }}>
+                              {item.text}
+                            </span>
+                            {item.category && (
+                              <Tag
+                                color={
+                                  item.category === "Resource"
+                                    ? "blue"
+                                    : item.category === "Tag"
+                                    ? "green"
+                                    : item.category === "Approval Flow"
+                                    ? "orange"
+                                    : item.category === "Policy"
+                                    ? "purple"
+                                    : "default"
+                                }
+                                style={{ fontSize: "12px" }}
+                              >
+                                {item.category}
+                              </Tag>
+                            )}
+                          </div>
+                        }
+                        description={
+                          <div>
+                            <span
+                              style={{
+                                color: darkMode
+                                  ? "rgba(255, 255, 255, 0.45)"
+                                  : "rgba(0, 0, 0, 0.45)",
+                              }}
+                            >
+                              ID: {item.id}
+                            </span>
+                            {item.description && (
+                              <div
+                                style={{
+                                  color: darkMode
+                                    ? "rgba(255, 255, 255, 0.65)"
+                                    : "rgba(0, 0, 0, 0.65)",
+                                  fontSize: "12px",
+                                  marginTop: "4px",
+                                }}
+                              >
+                                {item.description}
+                              </div>
+                            )}
+                          </div>
+                        }
+                      />
+                    </List.Item>
+                  )}
+                />
               </div>
+            )}
+
+            {/* Detail View */}
+            {selectedRecord && !isSearching && (
+              <>
+                <Button
+                  onClick={handleBackToResults}
+                  style={{ marginBottom: "16px", marginTop: "24px" }}
+                >
+                  Back to Results
+                </Button>
+                {renderDetailView()}
+              </>
+            )}
+
+            {/* No Results Message */}
+            {searchAttempted && !isSearching && searchResults.length === 0 && (
+              <Empty
+                description={
+                  <span style={{ color: darkMode ? "#fff" : undefined }}>
+                    No results found
+                  </span>
+                }
+                style={{ marginTop: "24px" }}
+              />
             )}
           </div>
         </Col>

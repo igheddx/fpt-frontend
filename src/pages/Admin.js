@@ -31,6 +31,11 @@ const Admin = () => {
           description="You don't have permission to view this content. Required: admin access"
           type="error"
           showIcon
+          style={{
+            backgroundColor: darkMode ? "#2a1215" : undefined,
+            borderColor: darkMode ? "#5b2526" : undefined,
+            color: darkMode ? "#fff" : undefined,
+          }}
         />
       </div>
     );
@@ -39,14 +44,14 @@ const Admin = () => {
   return (
     <div
       style={{
-        marginTop: "10px",
+        marginTop: "175px",
         background: darkMode ? "#121212" : "#f0f2f5",
         color: darkMode ? "#fff" : "#000",
         padding: "20px",
       }}
     >
       <h2>Admin Panel</h2>
-      <Tabs activeKey={activeTab} onChange={onChange}>
+      <Tabs activeKey={activeTab} type="card" onChange={onChange}>
         <Tabs.TabPane tab="Organization" key="1">
           <MyOrg />
         </Tabs.TabPane>

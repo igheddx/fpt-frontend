@@ -1,3 +1,79 @@
+.search-results-table {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.search-results-table.dark .ant-table {
+  background-color: #1f1f1f;
+  color: #fff;
+}
+
+.search-results-table.dark .ant-table-thead > tr > th {
+  background-color: #141414;
+  color: #fff;
+  border-bottom: 1px solid #303030;
+}
+
+.search-results-table.dark .ant-table-tbody > tr > td {
+  border-bottom: 1px solid #303030;
+  color: #fff;
+}
+
+.search-results-table.dark .ant-table-tbody > tr:hover > td {
+  background-color: #262626;
+}
+
+.search-results-table.dark .ant-table-row-expand-icon {
+  background-color: #1f1f1f;
+  border-color: #434343;
+}
+
+.search-results-table.dark .ant-table-row-expand-icon:hover {
+  background-color: #262626;
+}
+
+.search-results-table.dark .ant-pagination-item {
+  background-color: #1f1f1f;
+  border-color: #434343;
+}
+
+.search-results-table.dark .ant-pagination-item a {
+  color: #fff;
+}
+
+.search-results-table.dark .ant-pagination-item-active {
+  background-color: #177ddc;
+  border-color: #177ddc;
+}
+
+.search-results-table.dark .ant-pagination-prev button,
+.search-results-table.dark .ant-pagination-next button {
+  background-color: #1f1f1f;
+  border-color: #434343;
+  color: #fff;
+}
+
+.search-results-table.dark .ant-pagination-prev:hover button,
+.search-results-table.dark .ant-pagination-next:hover button {
+  background-color: #262626;
+}
+
+.dark-select-dropdown.ant-select-dropdown {
+  background-color: #1f1f1f;
+}
+
+.dark-select-dropdown .ant-select-item {
+  color: #fff;
+}
+
+.dark-select-dropdown .ant-select-item-option-selected {
+  background-color: #177ddc;
+}
+
+.dark-select-dropdown .ant-select-item-option-active {
+  background-color: #262626;
+}
+
 .search-results-table.light {
   /* Light mode styles */
   --border-color: #d9d9d9;
@@ -19,4 +95,132 @@
 .search-results-table .ant-table-tbody > tr:hover > td {
   background-color: var(--border-color) !important;
   opacity: 0.6;
+}
+
+.advanced-search {
+  padding: 24px;
+  min-height: 100vh;
+}
+
+.advanced-search.dark {
+  background-color: #141414;
+  color: #fff;
+}
+
+.advanced-search h2 {
+  margin-bottom: 24px;
+}
+
+.search-controls {
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.nl-search {
+  margin-top: 16px;
+}
+
+.structured-search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.search-results {
+  margin-top: 24px;
+}
+
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 24px;
+}
+
+/* Dark mode styles */
+.advanced-search.dark .ant-input,
+.advanced-search.dark .ant-select-selector,
+.advanced-search.dark .ant-input-textarea {
+  background-color: #1f1f1f;
+  border-color: #434343;
+  color: #fff;
+}
+
+.advanced-search.dark .ant-select-dropdown {
+  background-color: #1f1f1f;
+}
+
+.advanced-search.dark .ant-select-item {
+  color: #fff;
+}
+
+.advanced-search.dark .ant-select-item-option-selected {
+  background-color: #177ddc;
+}
+
+.advanced-search.dark .ant-empty {
+  color: #fff;
+}
+
+.advanced-search.dark .ant-modal-content,
+.advanced-search.dark .ant-modal-header {
+  background-color: #1f1f1f;
+  color: #fff;
+}
+
+.advanced-search.dark .ant-modal-title {
+  color: #fff;
+}
+
+.advanced-search.dark .ant-descriptions-item-label,
+.advanced-search.dark .ant-descriptions-item-content {
+  background-color: #141414;
+  border-color: #434343;
+  color: #fff;
+}
+
+/* Responsive styles */
+@media (max-width: 768px) {
+  .structured-search {
+    flex-direction: column;
+  }
+
+  .structured-search .ant-select,
+  .structured-search .ant-input {
+    width: 100% !important;
+  }
+}
+
+.advanced-search-container {
+  min-height: calc(100vh - 64px);
+  padding-top: 64px; /* Height of the AppHeader */
+  background-color: var(--background-color);
+}
+
+.search-section {
+  margin-bottom: 24px;
+}
+
+.search-result-item {
+  transition: all 0.3s ease;
+}
+
+.search-result-item:hover {
+  background-color: rgba(0, 0, 0, 0.02) !important;
+}
+
+/* Dark mode styles */
+:root[data-theme="dark"] .search-result-item:hover {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .advanced-search-container {
+    padding-top: 56px; /* Smaller header height on mobile */
+  }
 } 

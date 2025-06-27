@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from "react";
-import { Card, Row, Col, Table, theme, Alert, Badge } from "antd";
+import { Card, Row, Col, Table, theme, Alert, Badge, Tag, Space } from "antd";
 import {
   TeamOutlined,
   UserOutlined,
@@ -27,6 +27,9 @@ import { useApi } from "../hooks/useApi";
 const Dashboard = () => {
   const [selectedCard, setSelectedCard] = useState(null);
   const [metrics, setMetrics] = useState([]);
+  const [uniqueResources, setUniqueResources] = useState([]);
+  const [topTagResources, setTopTagResources] = useState([]);
+  const [isLoadingResources, setIsLoadingResources] = useState(false);
 
   const {
     token: { colorBgContainer, colorTextBase },
@@ -106,10 +109,6 @@ const Dashboard = () => {
           url: `/api/Metrics?customerId=${accountContext.customerId}&accountId=${accountContext.accountId}`,
         });
 
-        // const response = await fetch(
-        //   `http://localhost:5000/api/Metrics?customerId=${accountContext.customerId}&accountId=${accountContext.accountId}`
-        // );
-
         console.log("Dashboard - API Response:", response);
         // if (!response.ok) {
         //   throw new Error("Failed to fetch metrics");
@@ -123,6 +122,98 @@ const Dashboard = () => {
 
     fetchMetrics();
   }, [accountContext]); // Re-fetch when account context changes
+
+  const fetchUniqueResources = async () => {
+    if (!accountContext?.customerId || !accountContext?.accountId) {
+      console.log("No account context available");
+      return;
+    }
+
+    setIsLoadingResources(true);
+    try {
+      const response = await apiCall({
+        method: "GET",
+        url: `/api/Resource/search?customerId=${accountContext.customerId}&accountId=${accountContext.accountId}`,
+      });
+
+      console.log("Unique Resources Response:", response);
+      setUniqueResources(response || []);
+    } catch (error) {
+      console.error("Error fetching unique resources:", error);
+    } finally {
+      setIsLoadingResources(false);
+    }
+  };
+
+  const fetchTopTagResources = async () => {
+    if (!accountContext?.customerId || !accountContext?.accountId) {
+      console.log("No account context available");
+      return;
+    }
+
+    setIsLoadingResources(true);
+    try {
+      // First get the top tag from metrics
+      const topTag = metrics.find((m) => m.id === "tagUsed")?.value;
+      if (!topTag) {
+        console.log("No top tag found in metrics");
+        return;
+      }
+
+      // Get just the key part (assuming format is "key" or "key:value")
+      const key = topTag.split(":")[0];
+
+      // Fetch resources with this tag key
+      const response = await apiCall({
+        method: "GET",
+        url: `/api/ResourceTag/search?key=${encodeURIComponent(
+          key
+        )}&customerId=${accountContext.customerId}&accountId=${
+          accountContext.accountId
+        }`,
+      });
+
+      console.log("Top Tag Resources Response:", response);
+      setTopTagResources(response || []);
+    } catch (error) {
+      console.error("Error fetching top tag resources:", error);
+    } finally {
+      setIsLoadingResources(false);
+    }
+  };
+
+  const fetchComplianceResources = async () => {
+    if (!accountContext?.customerId || !accountContext?.accountId) {
+      console.log("No account context available");
+      return;
+    }
+
+    setIsLoadingResources(true);
+    try {
+      const response = await apiCall({
+        method: "GET",
+        url: `/api/Resource/search?customerId=${accountContext.customerId}&accountId=${accountContext.accountId}&tagCompliant=false`,
+      });
+
+      console.log("Non-Compliant Resources Response:", response);
+      setTopTagResources(response || []);
+    } catch (error) {
+      console.error("Error fetching non-compliant resources:", error);
+    } finally {
+      setIsLoadingResources(false);
+    }
+  };
+
+  const handleCardClick = async (cardType) => {
+    setSelectedCard(cardType);
+    if (cardType === "uniqueResources") {
+      await fetchUniqueResources();
+    } else if (cardType === "topTag") {
+      await fetchTopTagResources();
+    } else if (cardType === "complianceScore") {
+      await fetchComplianceResources();
+    }
+  };
 
   useEffect(() => {
     if (selectedCard && tableRef.current) {
@@ -187,6 +278,179 @@ const Dashboard = () => {
             pagination={false}
           />
         );
+      case "uniqueResources":
+        return (
+          <Table
+            loading={isLoadingResources}
+            columns={[
+              {
+                title: "Resource ID",
+                dataIndex: "resourceId",
+                key: "resourceId",
+                width: "20%",
+              },
+              {
+                title: "Name",
+                dataIndex: "name",
+                key: "name",
+                width: "25%",
+              },
+              {
+                title: "Type",
+                dataIndex: "type",
+                key: "type",
+                width: "15%",
+              },
+              {
+                title: "Category",
+                dataIndex: "category",
+                key: "category",
+                width: "20%",
+              },
+              {
+                title: "Region",
+                dataIndex: "region",
+                key: "region",
+                width: "20%",
+              },
+            ]}
+            dataSource={uniqueResources}
+            rowKey="resourceId"
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              showTotal: (total, range) =>
+                `${range[0]}-${range[1]} of ${total} items`,
+            }}
+            style={{
+              backgroundColor: darkMode ? "#141414" : "#fff",
+              color: darkMode ? "#fff" : "#000",
+            }}
+          />
+        );
+      case "topTag":
+        return (
+          <Table
+            loading={isLoadingResources}
+            columns={[
+              {
+                title: "Tag Key/Value",
+                key: "tag",
+                render: (_, record) => `${record.key}: ${record.value}`,
+                width: "20%",
+              },
+              {
+                title: "Resource ID",
+                dataIndex: "resourceId",
+                key: "resourceId",
+                width: "15%",
+              },
+              {
+                title: "Name",
+                dataIndex: "resourceName",
+                key: "name",
+                width: "20%",
+              },
+              {
+                title: "Type",
+                dataIndex: "resourceType",
+                key: "type",
+                width: "15%",
+              },
+              {
+                title: "Category",
+                dataIndex: "category",
+                key: "category",
+                width: "15%",
+              },
+              {
+                title: "Region",
+                dataIndex: "region",
+                key: "region",
+                width: "15%",
+              },
+            ]}
+            dataSource={topTagResources}
+            rowKey={(record) =>
+              `${record.resourceId}-${record.key}-${record.value}`
+            }
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              showTotal: (total, range) =>
+                `${range[0]}-${range[1]} of ${total} items`,
+            }}
+            style={{
+              backgroundColor: darkMode ? "#141414" : "#fff",
+              color: darkMode ? "#fff" : "#000",
+            }}
+          />
+        );
+      case "complianceScore":
+        return (
+          <Table
+            loading={isLoadingResources}
+            columns={[
+              {
+                title: "Resource ID",
+                dataIndex: "resourceId",
+                key: "resourceId",
+                width: "15%",
+              },
+              {
+                title: "Name",
+                dataIndex: "name",
+                key: "name",
+                width: "20%",
+              },
+              {
+                title: "Type",
+                dataIndex: "type",
+                key: "type",
+                width: "15%",
+              },
+              {
+                title: "Category",
+                dataIndex: "category",
+                key: "category",
+                width: "15%",
+              },
+              {
+                title: "Region",
+                dataIndex: "region",
+                key: "region",
+                width: "15%",
+              },
+              {
+                title: "Missing Tags",
+                dataIndex: "missingTags",
+                key: "missingTags",
+                width: "20%",
+                render: (tags) => (
+                  <Space wrap>
+                    {(tags || []).map((tag) => (
+                      <Tag key={tag} color="red">
+                        {tag}
+                      </Tag>
+                    ))}
+                  </Space>
+                ),
+              },
+            ]}
+            dataSource={topTagResources}
+            rowKey="resourceId"
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              showTotal: (total, range) =>
+                `${range[0]}-${range[1]} of ${total} items`,
+            }}
+            style={{
+              backgroundColor: darkMode ? "#141414" : "#fff",
+              color: darkMode ? "#fff" : "#000",
+            }}
+          />
+        );
       default:
         return null;
     }
@@ -198,10 +462,12 @@ const Dashboard = () => {
     borderRadius: 12,
     textAlign: "center",
     fontSize: 16,
-    borderColor: darkMode ? "#424242" : undefined,
-    background: darkMode ? "#1e1e1e" : undefined,
-    ".ant-card-head": {
-      borderBottom: darkMode ? "1px solid #2d2d2d" : undefined,
+    backgroundColor: darkMode ? "#1f1f1f" : colorBgContainer,
+    color: colorTextBase,
+    transition: "all 0.3s",
+    "&:hover": {
+      transform: "translateY(-3px)",
+      boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
     },
   };
 
@@ -216,6 +482,8 @@ const Dashboard = () => {
             headStyle={{
               borderBottom: darkMode ? "1px solid #2d2d2d" : undefined,
             }}
+            onClick={() => handleCardClick("uniqueResources")}
+            hoverable
             title={
               <DatabaseOutlined
                 style={{
@@ -244,6 +512,8 @@ const Dashboard = () => {
             headStyle={{
               borderBottom: darkMode ? "1px solid #2d2d2d" : undefined,
             }}
+            onClick={() => handleCardClick("topTag")}
+            hoverable
             title={
               <TagOutlined
                 style={{
@@ -271,6 +541,8 @@ const Dashboard = () => {
             headStyle={{
               borderBottom: darkMode ? "1px solid #2d2d2d" : undefined,
             }}
+            onClick={() => handleCardClick("complianceScore")}
+            hoverable
             title={
               <AuditOutlined
                 style={{
@@ -297,14 +569,13 @@ const Dashboard = () => {
       </>
     );
 
-    // Return just the metrics cards - removing role-based conditions as per requirements
     return metricsCards;
   };
 
   return (
     <div
       style={{
-        marginTop: "50px",
+        marginTop: "200px",
         // background: darkMode ? "#1e1e1e" : "#fff",
         // color: darkMode ? "#fff" : "#000",
         // borderRadius: "8px",
@@ -358,7 +629,15 @@ const Dashboard = () => {
         {selectedCard && (
           <div ref={tableRef}>
             <Card
-              title={`Details for ${selectedCard}`}
+              title={
+                selectedCard === "uniqueResources"
+                  ? "Unique Resources List"
+                  : selectedCard === "topTag"
+                  ? "Top Tag Resources"
+                  : selectedCard === "complianceScore"
+                  ? "Non-Compliant Resources"
+                  : "Details"
+              }
               style={{ marginBottom: 24 }}
             >
               {renderTable()}

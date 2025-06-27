@@ -27,6 +27,7 @@ const axiosInstance = axios.create({
   withCredentials: true,
   headers: {
     "Content-Type": "application/json",
+    Accept: "application/json",
   },
   timeout: 30000, // 30 seconds timeout
 });
@@ -43,12 +44,20 @@ axiosInstance.interceptors.request.use(
     console.log("Making request to:", config.url);
     console.log("Request method:", config.method);
     console.log("API Key present:", !!apiKey);
-    console.log("Request headers:", config.headers);
 
+    // Always set these headers
+    config.headers = {
+      ...config.headers,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    };
+
+    // Add API key if present
     if (apiKey) {
       config.headers["X-Api-Key"] = apiKey;
     }
 
+    console.log("Final request headers:", config.headers);
     return config;
   },
   (error) => {

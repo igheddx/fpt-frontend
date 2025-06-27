@@ -254,7 +254,13 @@ const AppHeader = () => {
           <img
             src={logo}
             alt="Logo"
-            style={{ height: 135, width: "auto", marginRight: 24 }}
+            style={{
+              height: 135,
+              width: "auto",
+              marginRight: 24,
+              cursor: "pointer",
+            }}
+            onClick={() => navigate("/dashboard")}
           />
           {isAuthenticated ? (
             <>
